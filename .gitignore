@@ -1,0 +1,6 @@
+# Binary (root only, not cmd/cc-queue/)
+/cc-queue
+
+# IDE
+.idea/
+.vscode/
