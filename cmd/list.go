@@ -128,7 +128,7 @@ func jumpRunE(opts Options) func(*cobra.Command, []string) error {
 		previewCmd := self + " _preview {1}"
 
 		fzf := exec.Command("fzf",
-			"--height=~50%",
+			"--height=50%",
 			"--layout=reverse",
 			"--with-nth=2..",
 			"--delimiter=\t",
