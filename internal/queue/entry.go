@@ -14,6 +14,7 @@ type Entry struct {
 	Timestamp     time.Time `json:"timestamp"`
 	SessionID     string    `json:"session_id"`
 	KittyWindowID string    `json:"kitty_window_id"`
+	KittyListenOn string    `json:"kitty_listen_on,omitempty"`
 	PID           int       `json:"pid"`
 	CWD           string    `json:"cwd"`
 	Event         string    `json:"event"`

@@ -30,6 +30,7 @@ func newPushCmd(opts Options) *cobra.Command {
 				Timestamp:     opts.TimeNow(),
 				SessionID:     input.SessionID,
 				KittyWindowID: kittyWinID,
+				KittyListenOn: os.Getenv("KITTY_LISTEN_ON"),
 				PID:           os.Getppid(),
 				CWD:           input.CWD,
 				Event:         input.EventType(),

@@ -76,9 +76,12 @@ func newListFzfCmd() *cobra.Command {
 // jumpToEntry focuses the kitty window for the given entry and removes it from the queue.
 func jumpToEntry(entry *queue.Entry) error {
 	if entry.KittyWindowID != "" {
-		kittyCmd := exec.Command("kitty", "@", "focus-window",
-			"--match", "id:"+entry.KittyWindowID)
-		if err := kittyCmd.Run(); err != nil {
+		args := []string{"@"}
+		if entry.KittyListenOn != "" {
+			args = append(args, "--to", entry.KittyListenOn)
+		}
+		args = append(args, "focus-window", "--match", "id:"+entry.KittyWindowID)
+		if err := exec.Command("kitty", args...).Run(); err != nil {
 			return fmt.Errorf("kitty focus-window failed: %w", err)
 		}
 	}
