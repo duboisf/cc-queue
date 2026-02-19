@@ -12,7 +12,46 @@ var testShortcuts = KittyShortcuts{
 	First:  "kitty_mod+shift+u",
 }
 
-func TestInstallKittyShortcut_FreshInstall(t *testing.T) {
+func TestBuildKittyConfig_BothShortcuts(t *testing.T) {
+	content := BuildKittyConfig(testShortcuts)
+
+	if !strings.Contains(content, "allow_remote_control socket-only") {
+		t.Error("missing allow_remote_control")
+	}
+	if !strings.Contains(content, "listen_on unix:/tmp/kitty-{kitty_pid}") {
+		t.Error("missing listen_on")
+	}
+	if !strings.Contains(content, "map kitty_mod+shift+q") {
+		t.Error("missing picker shortcut")
+	}
+	if !strings.Contains(content, "map kitty_mod+shift+u") {
+		t.Error("missing first shortcut")
+	}
+}
+
+func TestBuildKittyConfig_PickerOnly(t *testing.T) {
+	content := BuildKittyConfig(KittyShortcuts{Picker: "ctrl+shift+p"})
+
+	if !strings.Contains(content, "map ctrl+shift+p") {
+		t.Error("missing picker shortcut")
+	}
+	if strings.Contains(content, "cc-queue first") {
+		t.Error("first shortcut present when not requested")
+	}
+}
+
+func TestBuildKittyConfig_NoShortcuts(t *testing.T) {
+	content := BuildKittyConfig(KittyShortcuts{})
+
+	if !strings.Contains(content, "allow_remote_control") {
+		t.Error("missing remote control settings")
+	}
+	if strings.Contains(content, "Keyboard shortcuts") {
+		t.Error("shortcuts section present when none requested")
+	}
+}
+
+func TestInstallKittyConfig_FreshInstall(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 
@@ -21,74 +60,41 @@ func TestInstallKittyShortcut_FreshInstall(t *testing.T) {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 
-	path, err := InstallKittyShortcut(testShortcuts)
+	result, err := InstallKittyConfig(testShortcuts)
 	if err != nil {
-		t.Fatalf("InstallKittyShortcut: %v", err)
+		t.Fatalf("InstallKittyConfig: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
 	}
 
-	wantPath := filepath.Join(kittyDir, "kitty.conf")
-	if path != wantPath {
-		t.Errorf("path = %q, want %q", path, wantPath)
+	// cc-queue.conf created with correct content.
+	wantPath := filepath.Join(kittyDir, "cc-queue.conf")
+	if result.ConfPath != wantPath {
+		t.Errorf("ConfPath = %q, want %q", result.ConfPath, wantPath)
 	}
-
 	content, err := os.ReadFile(wantPath)
 	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
+		t.Fatalf("ReadFile cc-queue.conf: %v", err)
 	}
-
 	if !strings.Contains(string(content), "map kitty_mod+shift+q") {
-		t.Error("missing picker shortcut")
+		t.Error("cc-queue.conf missing picker shortcut")
 	}
-	if !strings.Contains(string(content), "map kitty_mod+shift+u") {
-		t.Error("missing first shortcut")
+
+	// include added to kitty.conf.
+	if !result.Included {
+		t.Error("expected Included=true on fresh install")
 	}
-	if !strings.Contains(string(content), "cc-queue first") {
-		t.Error("missing cc-queue first in shortcut")
-	}
-}
-
-func TestInstallKittyShortcut_PickerOnly(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
-
-	kittyDir := filepath.Join(tmp, ".config", "kitty")
-	os.MkdirAll(kittyDir, 0755)
-
-	path, err := InstallKittyShortcut(KittyShortcuts{Picker: "ctrl+shift+p"})
+	mainContent, err := os.ReadFile(filepath.Join(kittyDir, "kitty.conf"))
 	if err != nil {
-		t.Fatalf("InstallKittyShortcut: %v", err)
+		t.Fatalf("ReadFile kitty.conf: %v", err)
 	}
-	if path == "" {
-		t.Fatal("expected non-empty path")
-	}
-
-	content, _ := os.ReadFile(path)
-	s := string(content)
-	if !strings.Contains(s, "map ctrl+shift+p") {
-		t.Error("missing picker shortcut")
-	}
-	if strings.Contains(s, "cc-queue first") {
-		t.Error("first shortcut should not be present when not requested")
+	if !strings.Contains(string(mainContent), "include cc-queue.conf") {
+		t.Error("kitty.conf missing include directive")
 	}
 }
 
-func TestInstallKittyShortcut_NoShortcuts(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
-
-	kittyDir := filepath.Join(tmp, ".config", "kitty")
-	os.MkdirAll(kittyDir, 0755)
-
-	path, err := InstallKittyShortcut(KittyShortcuts{})
-	if err != nil {
-		t.Fatalf("InstallKittyShortcut: %v", err)
-	}
-	if path != "" {
-		t.Errorf("path = %q, want empty (no shortcuts requested)", path)
-	}
-}
-
-func TestInstallKittyShortcut_Idempotent(t *testing.T) {
+func TestInstallKittyConfig_ReplacesExisting(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 
@@ -96,134 +102,105 @@ func TestInstallKittyShortcut_Idempotent(t *testing.T) {
 	os.MkdirAll(kittyDir, 0755)
 
 	// First install.
-	path1, err := InstallKittyShortcut(testShortcuts)
-	if err != nil {
-		t.Fatalf("first install: %v", err)
-	}
-	if path1 == "" {
-		t.Fatal("first install returned empty path")
-	}
-
-	content1, _ := os.ReadFile(path1)
-
-	// Second install with same shortcuts — content should be identical.
-	path2, err := InstallKittyShortcut(testShortcuts)
-	if err != nil {
-		t.Fatalf("second install: %v", err)
-	}
-	if path2 == "" {
-		t.Fatal("second install returned empty path")
-	}
-
-	content2, _ := os.ReadFile(filepath.Join(kittyDir, "kitty.conf"))
-	if string(content1) != string(content2) {
-		t.Errorf("content changed on re-install with same shortcuts:\nbefore: %q\nafter:  %q", content1, content2)
-	}
-}
-
-func TestInstallKittyShortcut_ReplacesExisting(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
-
-	kittyDir := filepath.Join(tmp, ".config", "kitty")
-	os.MkdirAll(kittyDir, 0755)
-	confPath := filepath.Join(kittyDir, "kitty.conf")
-
-	// Write existing config with some user settings.
-	os.WriteFile(confPath, []byte("font_size 12\n"), 0644)
-
-	// First install with original shortcuts.
-	_, err := InstallKittyShortcut(testShortcuts)
+	_, err := InstallKittyConfig(testShortcuts)
 	if err != nil {
 		t.Fatalf("first install: %v", err)
 	}
 
-	// Second install with different shortcuts.
-	newShortcuts := KittyShortcuts{
-		Picker: "ctrl+alt+p",
-		First:  "ctrl+alt+f",
-	}
-	path, err := InstallKittyShortcut(newShortcuts)
+	// Second install with different shortcuts — cc-queue.conf overwritten.
+	newShortcuts := KittyShortcuts{Picker: "ctrl+alt+p", First: "ctrl+alt+f"}
+	result, err := InstallKittyConfig(newShortcuts)
 	if err != nil {
 		t.Fatalf("second install: %v", err)
 	}
-	if path == "" {
-		t.Fatal("second install returned empty path")
-	}
 
-	content, _ := os.ReadFile(confPath)
+	content, _ := os.ReadFile(result.ConfPath)
 	s := string(content)
 
-	// Old shortcuts should be gone.
 	if strings.Contains(s, "kitty_mod+shift+q") {
 		t.Error("old picker shortcut still present")
 	}
-	if strings.Contains(s, "kitty_mod+shift+u") {
-		t.Error("old first shortcut still present")
-	}
-
-	// New shortcuts should be present.
 	if !strings.Contains(s, "map ctrl+alt+p") {
 		t.Error("new picker shortcut missing")
 	}
-	if !strings.Contains(s, "map ctrl+alt+f") {
-		t.Error("new first shortcut missing")
-	}
 
-	// User config preserved.
-	if !strings.Contains(s, "font_size 12") {
-		t.Error("existing config was overwritten")
-	}
-
-	// Only one shortcut block.
-	if strings.Count(s, "# cc-queue keyboard shortcuts") != 1 {
-		t.Errorf("expected exactly 1 shortcut block, got %d", strings.Count(s, "# cc-queue keyboard shortcuts"))
+	// include should not be duplicated.
+	mainContent, _ := os.ReadFile(filepath.Join(kittyDir, "kitty.conf"))
+	if strings.Count(string(mainContent), "include cc-queue.conf") != 1 {
+		t.Error("include line duplicated in kitty.conf")
 	}
 }
 
-func TestInstallKittyShortcut_MissingKittyDir(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
-
-	// No kitty dir created — should skip.
-	path, err := InstallKittyShortcut(testShortcuts)
-	if err != nil {
-		t.Fatalf("InstallKittyShortcut: %v", err)
-	}
-	if path != "" {
-		t.Errorf("path = %q, want empty (no kitty dir)", path)
-	}
-}
-
-func TestInstallKittyShortcut_ExistingConf(t *testing.T) {
+func TestInstallKittyConfig_PreservesExistingConf(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 
 	kittyDir := filepath.Join(tmp, ".config", "kitty")
 	os.MkdirAll(kittyDir, 0755)
 
-	// Write existing config.
 	existing := "font_size 12\ninclude themes/mocha.conf\n"
-	confPath := filepath.Join(kittyDir, "kitty.conf")
-	os.WriteFile(confPath, []byte(existing), 0644)
+	mainConf := filepath.Join(kittyDir, "kitty.conf")
+	os.WriteFile(mainConf, []byte(existing), 0644)
 
-	path, err := InstallKittyShortcut(testShortcuts)
+	result, err := InstallKittyConfig(testShortcuts)
 	if err != nil {
-		t.Fatalf("InstallKittyShortcut: %v", err)
+		t.Fatalf("InstallKittyConfig: %v", err)
 	}
-	if path == "" {
-		t.Fatal("expected non-empty path")
+	if result == nil {
+		t.Fatal("expected non-nil result")
 	}
 
-	content, _ := os.ReadFile(confPath)
-	s := string(content)
+	mainContent, _ := os.ReadFile(mainConf)
+	s := string(mainContent)
 
-	// Existing content preserved.
 	if !strings.Contains(s, "font_size 12") {
-		t.Error("existing config was overwritten")
+		t.Error("existing config overwritten")
 	}
-	// Shortcuts appended.
-	if !strings.Contains(s, "cc-queue keyboard shortcuts") {
-		t.Error("shortcut block not appended")
+	if !strings.Contains(s, "include themes/mocha.conf") {
+		t.Error("existing include lost")
+	}
+	if !strings.Contains(s, "include cc-queue.conf") {
+		t.Error("cc-queue include not added")
+	}
+}
+
+func TestInstallKittyConfig_CleansLegacyBlock(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+
+	kittyDir := filepath.Join(tmp, ".config", "kitty")
+	os.MkdirAll(kittyDir, 0755)
+
+	// Simulate a legacy install that wrote directly to kitty.conf.
+	legacy := "font_size 12\n\n# cc-queue keyboard shortcuts\nmap kitty_mod+q launch --type=overlay --title cc-queue cc-queue\n"
+	mainConf := filepath.Join(kittyDir, "kitty.conf")
+	os.WriteFile(mainConf, []byte(legacy), 0644)
+
+	_, err := InstallKittyConfig(testShortcuts)
+	if err != nil {
+		t.Fatalf("InstallKittyConfig: %v", err)
+	}
+
+	mainContent, _ := os.ReadFile(mainConf)
+	s := string(mainContent)
+
+	if strings.Contains(s, "map kitty_mod+q") {
+		t.Error("legacy block not cleaned from kitty.conf")
+	}
+	if !strings.Contains(s, "include cc-queue.conf") {
+		t.Error("include not added after legacy cleanup")
+	}
+}
+
+func TestInstallKittyConfig_MissingKittyDir(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+
+	result, err := InstallKittyConfig(testShortcuts)
+	if err != nil {
+		t.Fatalf("InstallKittyConfig: %v", err)
+	}
+	if result != nil {
+		t.Errorf("expected nil result when kitty dir missing, got %+v", result)
 	}
 }

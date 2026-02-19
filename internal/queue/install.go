@@ -176,55 +176,85 @@ type KittyShortcuts struct {
 	First  string // shortcut for jump-to-first (e.g. "kitty_mod+shift+u")
 }
 
-// kittyBlockRe matches the cc-queue shortcut block in kitty.conf:
-// optional leading newline, comment line, and subsequent map lines referencing cc-queue.
+// KittyInstallResult describes what was written during kitty config installation.
+type KittyInstallResult struct {
+	ConfPath string // path to cc-queue.conf
+	Content  string // content of cc-queue.conf
+	MainConf string // path to kitty.conf
+	Included bool   // whether an include line was added to kitty.conf
+}
+
+// kittyBlockRe matches legacy cc-queue blocks written directly into kitty.conf.
 var kittyBlockRe = regexp.MustCompile(`(?m)\n?# cc-queue keyboard shortcuts\n(?:map [^\n]+ cc-queue[^\n]*\n)*`)
 
-// InstallKittyShortcut writes keyboard shortcuts to kitty.conf, replacing any
-// existing cc-queue block. Returns the path if shortcuts were written, or empty
-// string if skipped (no flags or no kitty config dir).
-func InstallKittyShortcut(shortcuts KittyShortcuts) (string, error) {
-	if shortcuts.Picker == "" && shortcuts.First == "" {
-		return "", nil // nothing to install
+// BuildKittyConfig returns the content for cc-queue.conf without writing anything.
+func BuildKittyConfig(shortcuts KittyShortcuts) string {
+	var b strings.Builder
+	b.WriteString("# cc-queue configuration for kitty\n\n")
+	b.WriteString("# Enable remote control for cross-window jumping\n")
+	b.WriteString("allow_remote_control socket-only\n")
+	b.WriteString("listen_on unix:/tmp/kitty-{kitty_pid}\n")
+	if shortcuts.Picker != "" || shortcuts.First != "" {
+		b.WriteString("\n# Keyboard shortcuts\n")
+		if shortcuts.Picker != "" {
+			fmt.Fprintf(&b, "map %s launch --type=overlay --title cc-queue cc-queue\n", shortcuts.Picker)
+		}
+		if shortcuts.First != "" {
+			fmt.Fprintf(&b, "map %s launch --type=overlay --title cc-queue cc-queue first\n", shortcuts.First)
+		}
 	}
+	return b.String()
+}
 
+// InstallKittyConfig creates cc-queue.conf in the kitty config directory and
+// adds an include directive to kitty.conf. Returns nil if the kitty config
+// directory doesn't exist.
+func InstallKittyConfig(shortcuts KittyShortcuts) (*KittyInstallResult, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	kittyDir := filepath.Join(home, ".config", "kitty")
 	if _, err := os.Stat(kittyDir); os.IsNotExist(err) {
-		return "", nil // kitty config dir doesn't exist, skip
+		return nil, nil // kitty config dir doesn't exist, skip
 	}
 
-	confPath := filepath.Join(kittyDir, "kitty.conf")
+	confPath := filepath.Join(kittyDir, "cc-queue.conf")
+	mainConf := filepath.Join(kittyDir, "kitty.conf")
+	content := BuildKittyConfig(shortcuts)
 
-	content, err := os.ReadFile(confPath)
+	if err := os.WriteFile(confPath, []byte(content), 0644); err != nil {
+		return nil, fmt.Errorf("writing %s: %w", confPath, err)
+	}
+
+	// Add include directive to kitty.conf if not already present.
+	mainContent, err := os.ReadFile(mainConf)
 	if err != nil && !os.IsNotExist(err) {
-		return "", fmt.Errorf("reading %s: %w", confPath, err)
+		return nil, fmt.Errorf("reading %s: %w", mainConf, err)
 	}
 
-	// Build the new shortcut block.
-	var b strings.Builder
-	b.WriteString("\n# cc-queue keyboard shortcuts\n")
-	if shortcuts.Picker != "" {
-		fmt.Fprintf(&b, "map %s launch --type=overlay --title cc-queue cc-queue\n", shortcuts.Picker)
-	}
-	if shortcuts.First != "" {
-		fmt.Fprintf(&b, "map %s launch --type=overlay --title cc-queue cc-queue first\n", shortcuts.First)
-	}
-	block := b.String()
+	included := false
+	includeLine := "include cc-queue.conf"
+	mainStr := string(mainContent)
 
-	// Strip any existing cc-queue block, then append the new one.
-	cleaned := kittyBlockRe.ReplaceAllString(string(content), "")
-	newContent := cleaned + block
-
-	if err := os.WriteFile(confPath, []byte(newContent), 0644); err != nil {
-		return "", fmt.Errorf("writing %s: %w", confPath, err)
+	if !strings.Contains(mainStr, includeLine) {
+		// Clean up any legacy cc-queue blocks from previous installs.
+		cleaned := kittyBlockRe.ReplaceAllString(mainStr, "")
+		cleaned = strings.TrimRight(cleaned, "\n")
+		newMain := cleaned + "\n\n" + includeLine + "\n"
+		if err := os.WriteFile(mainConf, []byte(newMain), 0644); err != nil {
+			return nil, fmt.Errorf("writing %s: %w", mainConf, err)
+		}
+		included = true
 	}
 
-	return confPath, nil
+	return &KittyInstallResult{
+		ConfPath: confPath,
+		Content:  content,
+		MainConf: mainConf,
+		Included: included,
+	}, nil
 }
 
 // hasHookCommand checks if any matcher entry already contains the given command.

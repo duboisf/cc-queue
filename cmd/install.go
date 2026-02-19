@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/duboisf/cc-queue/internal/queue"
 	"github.com/spf13/cobra"
@@ -35,12 +36,25 @@ func newInstallCmd(opts Options) *cobra.Command {
 				Picker: pickerShortcut,
 				First:  firstShortcut,
 			}
-			kittyPath, err := queue.InstallKittyShortcut(shortcuts)
+
+			// Preview the kitty config content before writing.
+			content := queue.BuildKittyConfig(shortcuts)
+			fmt.Fprintf(opts.Stdout, "\nCreating kitty config with:\n\n")
+			for _, line := range strings.Split(content, "\n") {
+				fmt.Fprintf(opts.Stdout, "  %s\n", line)
+			}
+
+			result, err := queue.InstallKittyConfig(shortcuts)
 			if err != nil {
 				return err
 			}
-			if kittyPath != "" {
-				fmt.Fprintf(opts.Stdout, "Kitty shortcuts installed in %s\n", kittyPath)
+			if result != nil {
+				fmt.Fprintf(opts.Stdout, "Created %s\n", result.ConfPath)
+				if result.Included {
+					fmt.Fprintf(opts.Stdout, "Added 'include cc-queue.conf' to %s\n", result.MainConf)
+				}
+			} else {
+				fmt.Fprintln(opts.Stdout, "Kitty config dir not found, skipping")
 			}
 
 			return nil
