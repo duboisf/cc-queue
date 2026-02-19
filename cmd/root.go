@@ -96,6 +96,6 @@ func DefaultOptions() Options {
 		Stdin:      os.Stdin,
 		Stdout:     os.Stdout,
 		Stderr:     os.Stderr,
-		FullTabber: &kitty.LayoutManager{},
+		FullTabber: kitty.NewLayoutManager(),
 	}
 }

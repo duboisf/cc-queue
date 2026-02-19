@@ -62,6 +62,12 @@ func setupQueueDir(t *testing.T) string {
 // seedEntry writes a queue entry for testing.
 func seedEntry(t *testing.T, sessionID, cwd, event string, pid int) {
 	t.Helper()
+	seedEntryWithMessage(t, sessionID, cwd, event, pid, "")
+}
+
+// seedEntryWithMessage writes a queue entry with a message for testing.
+func seedEntryWithMessage(t *testing.T, sessionID, cwd, event string, pid int, message string) {
+	t.Helper()
 	err := queue.Write(&queue.Entry{
 		Timestamp:     time.Now(),
 		SessionID:     sessionID,
@@ -69,6 +75,7 @@ func seedEntry(t *testing.T, sessionID, cwd, event string, pid int) {
 		PID:           pid,
 		CWD:           cwd,
 		Event:         event,
+		Message:       message,
 	})
 	if err != nil {
 		t.Fatalf("seedEntry: %v", err)

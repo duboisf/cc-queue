@@ -13,6 +13,27 @@ type FullTabber interface {
 	EnterFullTab() (restore func(), err error)
 }
 
+// Runner abstracts kitty remote control commands for testability.
+type Runner interface {
+	Ls() ([]byte, error)
+	GotoLayout(name string) error
+}
+
+// ExecRunner implements Runner by shelling out to kitty.
+type ExecRunner struct{}
+
+func (e *ExecRunner) Ls() ([]byte, error) {
+	return exec.Command("kitty", "@", "ls").Output()
+}
+
+func (e *ExecRunner) GotoLayout(name string) error {
+	out, err := exec.Command("kitty", "@", "goto-layout", name).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("kitty @ goto-layout %s: %w\n%s", name, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 type tab struct {
 	IsFocused bool   `json:"is_focused"`
 	Layout    string `json:"layout"`
@@ -22,23 +43,19 @@ type osWindow struct {
 	Tabs []tab `json:"tabs"`
 }
 
-func focusedLayout(windows []osWindow) string {
-	for _, w := range windows {
-		for _, t := range w.Tabs {
-			if t.IsFocused {
-				return t.Layout
-			}
-		}
-	}
-	return ""
+// LayoutManager implements FullTabber using a Runner for kitty remote control.
+type LayoutManager struct {
+	Runner Runner
 }
 
-// LayoutManager implements FullTabber using kitty remote control.
-type LayoutManager struct{}
+// NewLayoutManager returns a LayoutManager that shells out to kitty.
+func NewLayoutManager() *LayoutManager {
+	return &LayoutManager{Runner: &ExecRunner{}}
+}
 
 // CurrentLayout returns the layout name of the focused tab.
 func (l *LayoutManager) CurrentLayout() (string, error) {
-	out, err := exec.Command("kitty", "@", "ls").Output()
+	out, err := l.Runner.Ls()
 	if err != nil {
 		return "", fmt.Errorf("kitty @ ls: %w", err)
 	}
@@ -46,16 +63,19 @@ func (l *LayoutManager) CurrentLayout() (string, error) {
 	if err := json.Unmarshal(out, &windows); err != nil {
 		return "", fmt.Errorf("parsing kitty @ ls: %w", err)
 	}
-	return focusedLayout(windows), nil
+	for _, w := range windows {
+		for _, t := range w.Tabs {
+			if t.IsFocused {
+				return t.Layout, nil
+			}
+		}
+	}
+	return "", nil
 }
 
 // SetLayout changes the layout of the focused tab.
 func (l *LayoutManager) SetLayout(name string) error {
-	out, err := exec.Command("kitty", "@", "goto-layout", name).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("kitty @ goto-layout %s: %w\n%s", name, err, strings.TrimSpace(string(out)))
-	}
-	return nil
+	return l.Runner.GotoLayout(name)
 }
 
 // EnterFullTab switches to stack layout and returns a function that restores
