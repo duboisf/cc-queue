@@ -69,6 +69,7 @@ func NewRootCmd(opts Options) *cobra.Command {
 		installCmd,
 		completionCmd,
 		versionCmd,
+		newListFzfCmd(),
 	)
 	return root
 }

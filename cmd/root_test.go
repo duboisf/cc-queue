@@ -13,7 +13,7 @@ func TestNewRootCmd_HasExpectedSubcommands(t *testing.T) {
 
 	expected := []string{
 		"push", "pop", "list", "clear", "clean",
-		"install", "completion", "version",
+		"install", "completion", "version", "_list-fzf",
 	}
 	sort.Strings(expected)
 
