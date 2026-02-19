@@ -51,6 +51,7 @@ func Write(e *Entry) error {
 	if err != nil {
 		return err
 	}
+	Debugf("WRITE session=%s event=%s cwd=%s pid=%d wid=%s", e.SessionID, e.Event, e.CWD, e.PID, e.KittyWindowID)
 	return os.WriteFile(entryPath(e.SessionID), data, 0644)
 }
 
@@ -86,6 +87,7 @@ func List() ([]*Entry, error) {
 
 // Remove deletes the entry for a given session ID.
 func Remove(sessionID string) error {
+	Debugf("REMOVE session=%s", sessionID)
 	return os.Remove(entryPath(sessionID))
 }
 
@@ -116,9 +118,12 @@ func CleanStale() (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	Debugf("CLEAN_STALE found %d entries", len(entries))
 	removed := 0
 	for _, e := range entries {
-		if !IsProcessAlive(e.PID) {
+		alive := IsProcessAlive(e.PID)
+		Debugf("CLEAN_STALE session=%s pid=%d alive=%v", e.SessionID, e.PID, alive)
+		if !alive {
 			if err := Remove(e.SessionID); err == nil {
 				removed++
 			}

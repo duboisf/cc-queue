@@ -18,6 +18,7 @@ func newPopCmd(opts Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			queue.Debugf("POP session=%s", input.SessionID)
 			queue.Remove(input.SessionID)
 			return nil
 		},

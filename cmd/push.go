@@ -18,6 +18,7 @@ func newPushCmd(opts Options) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			kittyWinID := os.Getenv("KITTY_WINDOW_ID")
 			if kittyWinID == "" {
+				queue.Debugf("PUSH skip: KITTY_WINDOW_ID not set")
 				return nil
 			}
 
@@ -39,6 +40,7 @@ func newPushCmd(opts Options) *cobra.Command {
 				Message:       message,
 			}
 
+			queue.Debugf("PUSH session=%s event=%s ppid=%d", input.SessionID, input.EventType(), os.Getppid())
 			queue.CleanStale()
 			return queue.Write(entry)
 		},
