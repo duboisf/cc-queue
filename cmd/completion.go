@@ -1,0 +1,34 @@
+package cmd
+
+import (
+	"fmt"
+
+	"github.com/spf13/cobra"
+)
+
+func newCompletionCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:       "completion [bash|zsh]",
+		Short:     "Generate shell completion script",
+		Args:      cobra.ExactArgs(1),
+		ValidArgs: []string{"bash", "zsh"},
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) > 0 {
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
+			return []string{"bash", "zsh"}, cobra.ShellCompDirectiveNoFileComp
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			switch args[0] {
+			case "bash":
+				return cmd.Root().GenBashCompletionV2(out, true)
+			case "zsh":
+				return cmd.Root().GenZshCompletion(out)
+			default:
+				return fmt.Errorf("unsupported shell: %s", args[0])
+			}
+		},
+	}
+	return cmd
+}

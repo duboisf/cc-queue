@@ -1,6 +1,9 @@
 # Binary (root only, not cmd/cc-queue/)
 /cc-queue
 
+# Coverage
+coverage.out
+
 # IDE
 .idea/
 .vscode/
