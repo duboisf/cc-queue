@@ -45,12 +45,12 @@ flowchart LR
 
 - [kitty](https://sw.kovidgoyal.net/kitty/) with `allow_remote_control` and `listen_on` configured
 - [fzf](https://github.com/junegunn/fzf)
-- [Go](https://go.dev/) 1.21+ (build only)
+- [Go](https://go.dev/) 1.25+ (build only)
 
 ## Install
 
 ```sh
-go install github.com/duboisf/cc-queue/cmd/cc-queue@latest
+go install github.com/duboisf/cc-queue@latest
 ```
 
 Or build from source:
@@ -58,7 +58,7 @@ Or build from source:
 ```sh
 git clone https://github.com/duboisf/cc-queue.git
 cd cc-queue
-go build -o cc-queue ./cmd/cc-queue/
+go build -o cc-queue .
 cp cc-queue ~/.local/bin/  # or anywhere in PATH
 ```
 
@@ -70,25 +70,29 @@ cc-queue install --user
 
 # Project-level only
 cc-queue install --project
+
+# With optional kitty keyboard shortcuts
+cc-queue install --user --picker-shortcut 'kitty_mod+shift+q' --first-shortcut 'kitty_mod+shift+u'
 ```
 
-This adds two hooks to your Claude Code settings:
+This adds two hooks to your Claude Code settings and optionally configures kitty keyboard shortcuts:
 - **Notification** (`permission_prompt|idle_prompt|elicitation_dialog`) → `cc-queue push`
 - **UserPromptSubmit** → `cc-queue pop`
 
 ## Kitty config
 
-Ensure your `kitty.conf` has remote control enabled:
+The `install` command automatically creates a `cc-queue.conf` in your kitty config directory with remote control enabled. If you prefer to configure it manually, add this to your `kitty.conf`:
 
 ```conf
 allow_remote_control  socket-only
-listen_on             unix:/tmp/kitty
+listen_on             unix:/tmp/kitty-{kitty_pid}
 ```
 
 ## Usage
 
 ```sh
 cc-queue              # fzf picker — select a session and jump to it
+cc-queue first        # jump straight to the most recent entry
 cc-queue list         # plain text list of pending items
 cc-queue clear        # remove all entries
 cc-queue clean        # remove stale entries (dead processes)
