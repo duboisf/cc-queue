@@ -41,7 +41,6 @@ func newPushCmd(opts Options) *cobra.Command {
 			}
 
 			queue.Debugf("PUSH session=%s event=%s ppid=%d", input.SessionID, input.EventType(), os.Getppid())
-			queue.CleanStale()
 			return queue.Write(entry)
 		},
 	}
