@@ -73,6 +73,7 @@ func NewRootCmd(opts Options) *cobra.Command {
 		completionCmd,
 		versionCmd,
 		newListFzfCmd(),
+		newPreviewCmd(),
 	)
 	return root
 }

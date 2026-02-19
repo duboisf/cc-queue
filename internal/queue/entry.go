@@ -18,6 +18,7 @@ type Entry struct {
 	PID           int       `json:"pid"`
 	CWD           string    `json:"cwd"`
 	Event         string    `json:"event"`
+	Message       string    `json:"message,omitempty"`
 }
 
 // Dir returns the queue storage directory.

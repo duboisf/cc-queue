@@ -26,6 +26,8 @@ func newPushCmd(opts Options) *cobra.Command {
 				return err
 			}
 
+			message, _ := input.Raw["message"].(string)
+
 			entry := &queue.Entry{
 				Timestamp:     opts.TimeNow(),
 				SessionID:     input.SessionID,
@@ -34,6 +36,7 @@ func newPushCmd(opts Options) *cobra.Command {
 				PID:           os.Getppid(),
 				CWD:           input.CWD,
 				Event:         input.EventType(),
+				Message:       message,
 			}
 
 			queue.CleanStale()

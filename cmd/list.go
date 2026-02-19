@@ -73,6 +73,33 @@ func newListFzfCmd() *cobra.Command {
 	}
 }
 
+func newPreviewCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:    "_preview [session_id]",
+		Hidden: true,
+		Args:   cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			sessionID := args[0]
+			entries, err := queue.List()
+			if err != nil {
+				return
+			}
+			for _, e := range entries {
+				if e.SessionID == sessionID {
+					fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s\n\n",
+						queue.EventLabel(e.Event),
+						queue.FormatAge(e.Timestamp),
+						queue.ShortenPath(e.CWD))
+					if e.Message != "" {
+						fmt.Fprintln(cmd.OutOrStdout(), e.Message)
+					}
+					return
+				}
+			}
+		},
+	}
+}
+
 // jumpToEntry focuses the kitty window for the given entry and removes it from the queue.
 func jumpToEntry(entry *queue.Entry) error {
 	if entry.KittyWindowID != "" {
@@ -81,8 +108,9 @@ func jumpToEntry(entry *queue.Entry) error {
 			args = append(args, "--to", entry.KittyListenOn)
 		}
 		args = append(args, "focus-window", "--match", "id:"+entry.KittyWindowID)
-		if err := exec.Command("kitty", args...).Run(); err != nil {
-			return fmt.Errorf("kitty focus-window failed: %w", err)
+		cmd := exec.Command("kitty", args...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("kitty focus-window failed: %w\n%s", err, strings.TrimSpace(string(out)))
 		}
 	}
 	queue.Remove(entry.SessionID)
@@ -97,6 +125,7 @@ func jumpRunE(opts Options) func(*cobra.Command, []string) error {
 			self = "cc-queue"
 		}
 		reloadCmd := self + " _list-fzf"
+		previewCmd := self + " _preview {1}"
 
 		fzf := exec.Command("fzf",
 			"--height=~50%",
@@ -104,8 +133,10 @@ func jumpRunE(opts Options) func(*cobra.Command, []string) error {
 			"--with-nth=2..",
 			"--delimiter=\t",
 			"--no-multi",
-			"--header=cc-queue: select to jump (live)",
+			"--header=cc-queue: select to jump to claude code session (live)",
 			"--prompt=cc-queue> ",
+			"--preview="+previewCmd,
+			"--preview-window=down,wrap,40%",
 			"--bind=load:reload(sleep 1; "+reloadCmd+")",
 		)
 		fzf.Stdin = strings.NewReader(fzfLines())
