@@ -5,6 +5,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/duboisf/cc-queue/internal/kitty"
 	"github.com/spf13/cobra"
 )
 
@@ -18,6 +19,8 @@ type Options struct {
 	Stdout io.Writer
 	// Stderr for error output.
 	Stderr io.Writer
+	// FullTabber manages kitty tab layout for full-tab overlays.
+	FullTabber kitty.FullTabber
 }
 
 // NewRootCmd creates the root cobra command with all subcommands wired up.
@@ -89,9 +92,10 @@ func Execute() error {
 // DefaultOptions returns production-ready Options with standard I/O.
 func DefaultOptions() Options {
 	return Options{
-		TimeNow: time.Now,
-		Stdin:   os.Stdin,
-		Stdout:  os.Stdout,
-		Stderr:  os.Stderr,
+		TimeNow:    time.Now,
+		Stdin:      os.Stdin,
+		Stdout:     os.Stdout,
+		Stderr:     os.Stderr,
+		FullTabber: &kitty.LayoutManager{},
 	}
 }

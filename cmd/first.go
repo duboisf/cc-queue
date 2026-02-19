@@ -1,12 +1,11 @@
 package cmd
 
 import (
-	"github.com/duboisf/cc-queue/internal/kitty"
 	"github.com/duboisf/cc-queue/internal/queue"
 	"github.com/spf13/cobra"
 )
 
-func newFirstCmd(_ Options) *cobra.Command {
+func newFirstCmd(opts Options) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "first",
 		Short: "Jump to the most recent queue entry",
@@ -16,7 +15,7 @@ func newFirstCmd(_ Options) *cobra.Command {
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if fullTab, _ := cmd.Flags().GetBool("full-tab"); fullTab {
-				restore, err := kitty.EnterFullTab()
+				restore, err := opts.FullTabber.EnterFullTab()
 				if err != nil {
 					return err
 				}

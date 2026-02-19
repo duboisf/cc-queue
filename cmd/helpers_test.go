@@ -11,6 +11,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// nopFullTabber is a mock FullTabber that does nothing.
+type nopFullTabber struct{}
+
+func (n *nopFullTabber) EnterFullTab() (func(), error) {
+	return func() {}, nil
+}
+
 // testOptions creates cmd.Options with captured stdout/stderr and a fixed time.
 func testOptions() (cmd.Options, *bytes.Buffer, *bytes.Buffer) {
 	stdout := &bytes.Buffer{}
@@ -19,9 +26,10 @@ func testOptions() (cmd.Options, *bytes.Buffer, *bytes.Buffer) {
 		TimeNow: func() time.Time {
 			return time.Date(2026, 2, 18, 14, 30, 0, 0, time.UTC)
 		},
-		Stdin:  &bytes.Buffer{},
-		Stdout: stdout,
-		Stderr: stderr,
+		Stdin:      &bytes.Buffer{},
+		Stdout:     stdout,
+		Stderr:     stderr,
+		FullTabber: &nopFullTabber{},
 	}
 	return opts, stdout, stderr
 }
@@ -34,9 +42,10 @@ func testOptionsWithStdin(stdin string) (cmd.Options, *bytes.Buffer, *bytes.Buff
 		TimeNow: func() time.Time {
 			return time.Date(2026, 2, 18, 14, 30, 0, 0, time.UTC)
 		},
-		Stdin:  bytes.NewBufferString(stdin),
-		Stdout: stdout,
-		Stderr: stderr,
+		Stdin:      bytes.NewBufferString(stdin),
+		Stdout:     stdout,
+		Stderr:     stderr,
+		FullTabber: &nopFullTabber{},
 	}
 	return opts, stdout, stderr
 }

@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/duboisf/cc-queue/internal/kitty"
 	"github.com/duboisf/cc-queue/internal/queue"
 	"github.com/spf13/cobra"
 )
@@ -122,7 +121,7 @@ func jumpToEntry(entry *queue.Entry) error {
 func jumpRunE(opts Options) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		if fullTab, _ := cmd.Flags().GetBool("full-tab"); fullTab {
-			restore, err := kitty.EnterFullTab()
+			restore, err := opts.FullTabber.EnterFullTab()
 			if err != nil {
 				return err
 			}

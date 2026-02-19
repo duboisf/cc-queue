@@ -7,6 +7,12 @@ import (
 	"strings"
 )
 
+// FullTabber switches the kitty tab to a full-screen layout and provides
+// a function to restore the previous layout.
+type FullTabber interface {
+	EnterFullTab() (restore func(), err error)
+}
+
 type tab struct {
 	IsFocused bool   `json:"is_focused"`
 	Layout    string `json:"layout"`
@@ -14,10 +20,6 @@ type tab struct {
 
 type osWindow struct {
 	Tabs []tab `json:"tabs"`
-}
-
-func parseJSON(data string, v any) error {
-	return json.Unmarshal([]byte(data), v)
 }
 
 func focusedLayout(windows []osWindow) string {
@@ -31,8 +33,11 @@ func focusedLayout(windows []osWindow) string {
 	return ""
 }
 
+// LayoutManager implements FullTabber using kitty remote control.
+type LayoutManager struct{}
+
 // CurrentLayout returns the layout name of the focused tab.
-func CurrentLayout() (string, error) {
+func (l *LayoutManager) CurrentLayout() (string, error) {
 	out, err := exec.Command("kitty", "@", "ls").Output()
 	if err != nil {
 		return "", fmt.Errorf("kitty @ ls: %w", err)
@@ -45,7 +50,7 @@ func CurrentLayout() (string, error) {
 }
 
 // SetLayout changes the layout of the focused tab.
-func SetLayout(name string) error {
+func (l *LayoutManager) SetLayout(name string) error {
 	out, err := exec.Command("kitty", "@", "goto-layout", name).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("kitty @ goto-layout %s: %w\n%s", name, err, strings.TrimSpace(string(out)))
@@ -56,10 +61,10 @@ func SetLayout(name string) error {
 // EnterFullTab switches to stack layout and returns a function that restores
 // the previous layout. If already in stack layout or kitty is unavailable,
 // the returned function is a no-op.
-func EnterFullTab() (restore func(), err error) {
+func (l *LayoutManager) EnterFullTab() (restore func(), err error) {
 	noop := func() {}
 
-	layout, err := CurrentLayout()
+	layout, err := l.CurrentLayout()
 	if err != nil {
 		return noop, err
 	}
@@ -67,11 +72,11 @@ func EnterFullTab() (restore func(), err error) {
 		return noop, nil
 	}
 
-	if err := SetLayout("stack"); err != nil {
+	if err := l.SetLayout("stack"); err != nil {
 		return noop, err
 	}
 
 	return func() {
-		SetLayout(layout)
+		l.SetLayout(layout)
 	}, nil
 }
