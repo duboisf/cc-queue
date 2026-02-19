@@ -73,6 +73,19 @@ func newListFzfCmd() *cobra.Command {
 	}
 }
 
+// jumpToEntry focuses the kitty window for the given entry and removes it from the queue.
+func jumpToEntry(entry *queue.Entry) error {
+	if entry.KittyWindowID != "" {
+		kittyCmd := exec.Command("kitty", "@", "focus-window",
+			"--match", "id:"+entry.KittyWindowID)
+		if err := kittyCmd.Run(); err != nil {
+			return fmt.Errorf("kitty focus-window failed: %w", err)
+		}
+	}
+	queue.Remove(entry.SessionID)
+	return nil
+}
+
 // jumpRunE returns the RunE function for the root command (live fzf picker).
 func jumpRunE(opts Options) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
@@ -84,15 +97,15 @@ func jumpRunE(opts Options) func(*cobra.Command, []string) error {
 
 		fzf := exec.Command("fzf",
 			"--height=~50%",
+			"--layout=reverse",
 			"--with-nth=2..",
 			"--delimiter=\t",
 			"--no-multi",
 			"--header=cc-queue: select to jump (live)",
 			"--prompt=cc-queue> ",
-			"--bind=start:reload:"+reloadCmd,
 			"--bind=load:reload(sleep 1; "+reloadCmd+")",
 		)
-		fzf.Stdin = nil
+		fzf.Stdin = strings.NewReader(fzfLines())
 		fzf.Stderr = opts.Stderr
 
 		// fzf writes the selected line to stdout, but since we need to capture
@@ -122,16 +135,7 @@ func jumpRunE(opts Options) func(*cobra.Command, []string) error {
 			return nil // entry was removed while fzf was open
 		}
 
-		if target.KittyWindowID != "" {
-			kittyCmd := exec.Command("kitty", "@", "focus-window",
-				"--match", "id:"+target.KittyWindowID)
-			if err := kittyCmd.Run(); err != nil {
-				return fmt.Errorf("kitty focus-window failed: %w", err)
-			}
-		}
-
-		queue.Remove(sessionID)
-		return nil
+		return jumpToEntry(target)
 	}
 }
 

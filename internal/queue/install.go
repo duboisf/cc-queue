@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -166,6 +167,62 @@ func getOrCreateArray(m map[string]any, key string) []any {
 		return v
 	}
 	return nil
+}
+
+// KittyShortcuts holds the keyboard shortcuts to install in kitty.conf.
+type KittyShortcuts struct {
+	Picker string // shortcut for the fzf picker overlay (e.g. "kitty_mod+shift+q")
+	First  string // shortcut for jump-to-first (e.g. "kitty_mod+shift+u")
+}
+
+// InstallKittyShortcut appends keyboard shortcuts to kitty.conf if not already present.
+// Returns the path to kitty.conf if shortcuts were installed, or empty string if skipped.
+func InstallKittyShortcut(shortcuts KittyShortcuts) (string, error) {
+	if shortcuts.Picker == "" && shortcuts.First == "" {
+		return "", nil // nothing to install
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+
+	kittyDir := filepath.Join(home, ".config", "kitty")
+	if _, err := os.Stat(kittyDir); os.IsNotExist(err) {
+		return "", nil // kitty config dir doesn't exist, skip
+	}
+
+	confPath := filepath.Join(kittyDir, "kitty.conf")
+
+	content, err := os.ReadFile(confPath)
+	if err != nil && !os.IsNotExist(err) {
+		return "", fmt.Errorf("reading %s: %w", confPath, err)
+	}
+
+	if strings.Contains(string(content), "cc-queue") {
+		return "", nil // already installed
+	}
+
+	var b strings.Builder
+	b.WriteString("\n# cc-queue keyboard shortcuts\n")
+	if shortcuts.Picker != "" {
+		fmt.Fprintf(&b, "map %s launch --type=overlay --title cc-queue cc-queue\n", shortcuts.Picker)
+	}
+	if shortcuts.First != "" {
+		fmt.Fprintf(&b, "map %s launch --type=overlay --title cc-queue cc-queue first\n", shortcuts.First)
+	}
+
+	f, err := os.OpenFile(confPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return "", fmt.Errorf("opening %s: %w", confPath, err)
+	}
+	defer f.Close()
+
+	if _, err := f.WriteString(b.String()); err != nil {
+		return "", fmt.Errorf("writing to %s: %w", confPath, err)
+	}
+
+	return confPath, nil
 }
 
 // hasHookCommand checks if any matcher entry already contains the given command.
