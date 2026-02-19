@@ -208,10 +208,10 @@ func BuildKittyConfig(shortcuts KittyShortcuts) string {
 			shell = "/bin/sh"
 		}
 		if shortcuts.Picker != "" {
-			fmt.Fprintf(&b, "map %s launch --type=overlay --title cc-queue %s -il -c 'exec %s'\n", shortcuts.Picker, shell, bin)
+			fmt.Fprintf(&b, "map %s launch --type=overlay --title cc-queue %s -il -c 'exec %s --full-tab'\n", shortcuts.Picker, shell, bin)
 		}
 		if shortcuts.First != "" {
-			fmt.Fprintf(&b, "map %s launch --type=overlay --title cc-queue %s -il -c 'exec %s first'\n", shortcuts.First, shell, bin)
+			fmt.Fprintf(&b, "map %s launch --type=overlay --title cc-queue %s -il -c 'exec %s --full-tab first'\n", shortcuts.First, shell, bin)
 		}
 	}
 	return b.String()

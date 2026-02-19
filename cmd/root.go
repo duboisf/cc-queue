@@ -32,6 +32,8 @@ func NewRootCmd(opts Options) *cobra.Command {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		},
 	}
+	root.Flags().Bool("full-tab", false, "Use stack layout to cover the entire tab, restore on exit")
+	_ = root.RegisterFlagCompletionFunc("full-tab", cobra.NoFileCompletions)
 	root.SetOut(opts.Stdout)
 	root.SetErr(opts.Stderr)
 

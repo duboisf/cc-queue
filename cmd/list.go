@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/duboisf/cc-queue/internal/kitty"
 	"github.com/duboisf/cc-queue/internal/queue"
 	"github.com/spf13/cobra"
 )
@@ -120,6 +121,14 @@ func jumpToEntry(entry *queue.Entry) error {
 // jumpRunE returns the RunE function for the root command (live fzf picker).
 func jumpRunE(opts Options) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
+		if fullTab, _ := cmd.Flags().GetBool("full-tab"); fullTab {
+			restore, err := kitty.EnterFullTab()
+			if err != nil {
+				return err
+			}
+			defer restore()
+		}
+
 		self, err := os.Executable()
 		if err != nil {
 			self = "cc-queue"

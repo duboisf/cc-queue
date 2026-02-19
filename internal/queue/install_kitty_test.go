@@ -47,12 +47,12 @@ func TestBuildKittyConfig_LoginShellWrapper(t *testing.T) {
 		Shell:  "/bin/zsh",
 	})
 
-	wantPicker := "map alt+q launch --type=overlay --title cc-queue /bin/zsh -il -c 'exec cc-queue'"
+	wantPicker := "map alt+q launch --type=overlay --title cc-queue /bin/zsh -il -c 'exec cc-queue --full-tab'"
 	if !strings.Contains(content, wantPicker) {
 		t.Errorf("picker line mismatch\ngot:\n%s\nwant line containing:\n%s", content, wantPicker)
 	}
 
-	wantFirst := "map alt+j launch --type=overlay --title cc-queue /bin/zsh -il -c 'exec cc-queue first'"
+	wantFirst := "map alt+j launch --type=overlay --title cc-queue /bin/zsh -il -c 'exec cc-queue --full-tab first'"
 	if !strings.Contains(content, wantFirst) {
 		t.Errorf("first line mismatch\ngot:\n%s\nwant line containing:\n%s", content, wantFirst)
 	}
