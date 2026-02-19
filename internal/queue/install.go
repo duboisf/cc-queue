@@ -172,8 +172,10 @@ func getOrCreateArray(m map[string]any, key string) []any {
 
 // KittyShortcuts holds the keyboard shortcuts to install in kitty.conf.
 type KittyShortcuts struct {
-	Picker string // shortcut for the fzf picker overlay (e.g. "kitty_mod+shift+q")
-	First  string // shortcut for jump-to-first (e.g. "kitty_mod+shift+u")
+	Picker     string // shortcut for the fzf picker overlay (e.g. "kitty_mod+shift+q")
+	First      string // shortcut for jump-to-first (e.g. "kitty_mod+shift+u")
+	BinaryPath string // absolute path to cc-queue binary
+	Shell      string // user's login shell for overlay wrapper
 }
 
 // KittyInstallResult describes what was written during kitty config installation.
@@ -189,6 +191,11 @@ var kittyBlockRe = regexp.MustCompile(`(?m)\n?# cc-queue keyboard shortcuts\n(?:
 
 // BuildKittyConfig returns the content for cc-queue.conf without writing anything.
 func BuildKittyConfig(shortcuts KittyShortcuts) string {
+	bin := shortcuts.BinaryPath
+	if bin == "" {
+		bin = "cc-queue"
+	}
+
 	var b strings.Builder
 	b.WriteString("# cc-queue configuration for kitty\n\n")
 	b.WriteString("# Enable remote control for cross-window jumping\n")
@@ -196,11 +203,15 @@ func BuildKittyConfig(shortcuts KittyShortcuts) string {
 	b.WriteString("listen_on unix:/tmp/kitty-{kitty_pid}\n")
 	if shortcuts.Picker != "" || shortcuts.First != "" {
 		b.WriteString("\n# Keyboard shortcuts\n")
+		shell := shortcuts.Shell
+		if shell == "" {
+			shell = "/bin/sh"
+		}
 		if shortcuts.Picker != "" {
-			fmt.Fprintf(&b, "map %s launch --type=overlay --title cc-queue cc-queue\n", shortcuts.Picker)
+			fmt.Fprintf(&b, "map %s launch --type=overlay --title cc-queue %s -il -c 'exec %s'\n", shortcuts.Picker, shell, bin)
 		}
 		if shortcuts.First != "" {
-			fmt.Fprintf(&b, "map %s launch --type=overlay --title cc-queue cc-queue first\n", shortcuts.First)
+			fmt.Fprintf(&b, "map %s launch --type=overlay --title cc-queue %s -il -c 'exec %s first'\n", shortcuts.First, shell, bin)
 		}
 	}
 	return b.String()

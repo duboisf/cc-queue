@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/duboisf/cc-queue/internal/queue"
@@ -35,6 +36,7 @@ func newInstallCmd(opts Options) *cobra.Command {
 			shortcuts := queue.KittyShortcuts{
 				Picker: pickerShortcut,
 				First:  firstShortcut,
+				Shell:  os.Getenv("SHELL"),
 			}
 
 			// Preview the kitty config content before writing.

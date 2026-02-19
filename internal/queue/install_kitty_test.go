@@ -40,6 +40,32 @@ func TestBuildKittyConfig_PickerOnly(t *testing.T) {
 	}
 }
 
+func TestBuildKittyConfig_LoginShellWrapper(t *testing.T) {
+	content := BuildKittyConfig(KittyShortcuts{
+		Picker: "alt+q",
+		First:  "alt+j",
+		Shell:  "/bin/zsh",
+	})
+
+	wantPicker := "map alt+q launch --type=overlay --title cc-queue /bin/zsh -il -c 'exec cc-queue'"
+	if !strings.Contains(content, wantPicker) {
+		t.Errorf("picker line mismatch\ngot:\n%s\nwant line containing:\n%s", content, wantPicker)
+	}
+
+	wantFirst := "map alt+j launch --type=overlay --title cc-queue /bin/zsh -il -c 'exec cc-queue first'"
+	if !strings.Contains(content, wantFirst) {
+		t.Errorf("first line mismatch\ngot:\n%s\nwant line containing:\n%s", content, wantFirst)
+	}
+}
+
+func TestBuildKittyConfig_DefaultShell(t *testing.T) {
+	content := BuildKittyConfig(KittyShortcuts{Picker: "alt+q"})
+
+	if !strings.Contains(content, "/bin/sh -il -c") {
+		t.Errorf("expected /bin/sh fallback when Shell is empty, got:\n%s", content)
+	}
+}
+
 func TestBuildKittyConfig_NoShortcuts(t *testing.T) {
 	content := BuildKittyConfig(KittyShortcuts{})
 
