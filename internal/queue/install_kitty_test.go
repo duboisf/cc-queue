@@ -106,18 +106,78 @@ func TestInstallKittyShortcut_Idempotent(t *testing.T) {
 
 	content1, _ := os.ReadFile(path1)
 
-	// Second install should be a no-op.
+	// Second install with same shortcuts — content should be identical.
 	path2, err := InstallKittyShortcut(testShortcuts)
 	if err != nil {
 		t.Fatalf("second install: %v", err)
 	}
-	if path2 != "" {
-		t.Errorf("second install returned path %q, want empty (already installed)", path2)
+	if path2 == "" {
+		t.Fatal("second install returned empty path")
 	}
 
 	content2, _ := os.ReadFile(filepath.Join(kittyDir, "kitty.conf"))
 	if string(content1) != string(content2) {
-		t.Error("kitty.conf content changed on second install")
+		t.Errorf("content changed on re-install with same shortcuts:\nbefore: %q\nafter:  %q", content1, content2)
+	}
+}
+
+func TestInstallKittyShortcut_ReplacesExisting(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+
+	kittyDir := filepath.Join(tmp, ".config", "kitty")
+	os.MkdirAll(kittyDir, 0755)
+	confPath := filepath.Join(kittyDir, "kitty.conf")
+
+	// Write existing config with some user settings.
+	os.WriteFile(confPath, []byte("font_size 12\n"), 0644)
+
+	// First install with original shortcuts.
+	_, err := InstallKittyShortcut(testShortcuts)
+	if err != nil {
+		t.Fatalf("first install: %v", err)
+	}
+
+	// Second install with different shortcuts.
+	newShortcuts := KittyShortcuts{
+		Picker: "ctrl+alt+p",
+		First:  "ctrl+alt+f",
+	}
+	path, err := InstallKittyShortcut(newShortcuts)
+	if err != nil {
+		t.Fatalf("second install: %v", err)
+	}
+	if path == "" {
+		t.Fatal("second install returned empty path")
+	}
+
+	content, _ := os.ReadFile(confPath)
+	s := string(content)
+
+	// Old shortcuts should be gone.
+	if strings.Contains(s, "kitty_mod+shift+q") {
+		t.Error("old picker shortcut still present")
+	}
+	if strings.Contains(s, "kitty_mod+shift+u") {
+		t.Error("old first shortcut still present")
+	}
+
+	// New shortcuts should be present.
+	if !strings.Contains(s, "map ctrl+alt+p") {
+		t.Error("new picker shortcut missing")
+	}
+	if !strings.Contains(s, "map ctrl+alt+f") {
+		t.Error("new first shortcut missing")
+	}
+
+	// User config preserved.
+	if !strings.Contains(s, "font_size 12") {
+		t.Error("existing config was overwritten")
+	}
+
+	// Only one shortcut block.
+	if strings.Count(s, "# cc-queue keyboard shortcuts") != 1 {
+		t.Errorf("expected exactly 1 shortcut block, got %d", strings.Count(s, "# cc-queue keyboard shortcuts"))
 	}
 }
 

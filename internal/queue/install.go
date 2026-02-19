@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -175,8 +176,13 @@ type KittyShortcuts struct {
 	First  string // shortcut for jump-to-first (e.g. "kitty_mod+shift+u")
 }
 
-// InstallKittyShortcut appends keyboard shortcuts to kitty.conf if not already present.
-// Returns the path to kitty.conf if shortcuts were installed, or empty string if skipped.
+// kittyBlockRe matches the cc-queue shortcut block in kitty.conf:
+// optional leading newline, comment line, and subsequent map lines referencing cc-queue.
+var kittyBlockRe = regexp.MustCompile(`(?m)\n?# cc-queue keyboard shortcuts\n(?:map [^\n]+ cc-queue[^\n]*\n)*`)
+
+// InstallKittyShortcut writes keyboard shortcuts to kitty.conf, replacing any
+// existing cc-queue block. Returns the path if shortcuts were written, or empty
+// string if skipped (no flags or no kitty config dir).
 func InstallKittyShortcut(shortcuts KittyShortcuts) (string, error) {
 	if shortcuts.Picker == "" && shortcuts.First == "" {
 		return "", nil // nothing to install
@@ -199,10 +205,7 @@ func InstallKittyShortcut(shortcuts KittyShortcuts) (string, error) {
 		return "", fmt.Errorf("reading %s: %w", confPath, err)
 	}
 
-	if strings.Contains(string(content), "cc-queue") {
-		return "", nil // already installed
-	}
-
+	// Build the new shortcut block.
 	var b strings.Builder
 	b.WriteString("\n# cc-queue keyboard shortcuts\n")
 	if shortcuts.Picker != "" {
@@ -211,15 +214,14 @@ func InstallKittyShortcut(shortcuts KittyShortcuts) (string, error) {
 	if shortcuts.First != "" {
 		fmt.Fprintf(&b, "map %s launch --type=overlay --title cc-queue cc-queue first\n", shortcuts.First)
 	}
+	block := b.String()
 
-	f, err := os.OpenFile(confPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return "", fmt.Errorf("opening %s: %w", confPath, err)
-	}
-	defer f.Close()
+	// Strip any existing cc-queue block, then append the new one.
+	cleaned := kittyBlockRe.ReplaceAllString(string(content), "")
+	newContent := cleaned + block
 
-	if _, err := f.WriteString(b.String()); err != nil {
-		return "", fmt.Errorf("writing to %s: %w", confPath, err)
+	if err := os.WriteFile(confPath, []byte(newContent), 0644); err != nil {
+		return "", fmt.Errorf("writing %s: %w", confPath, err)
 	}
 
 	return confPath, nil
