@@ -82,6 +82,22 @@ func seedEntryWithMessage(t *testing.T, sessionID, cwd, event string, pid int, m
 	}
 }
 
+// seedEntryAtTime writes a queue entry with a relative time offset (in seconds) for testing.
+func seedEntryAtTime(t *testing.T, sessionID, cwd, event string, pid int, offsetSec int) {
+	t.Helper()
+	err := queue.Write(&queue.Entry{
+		Timestamp:     time.Now().Add(time.Duration(offsetSec) * time.Second),
+		SessionID:     sessionID,
+		KittyWindowID: "42",
+		PID:           pid,
+		CWD:           cwd,
+		Event:         event,
+	})
+	if err != nil {
+		t.Fatalf("seedEntryAtTime: %v", err)
+	}
+}
+
 // seedEntryNoWindow writes a queue entry without a KittyWindowID for testing.
 func seedEntryNoWindow(t *testing.T, sessionID, cwd, event string, pid int) {
 	t.Helper()

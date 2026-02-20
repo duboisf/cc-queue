@@ -8,7 +8,7 @@ import (
 func newFirstCmd(opts Options) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "first",
-		Short: "Jump to the most recent queue entry",
+		Short: "Jump to the most recent session needing attention",
 		Args:  cobra.NoArgs,
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return nil, cobra.ShellCompDirectiveNoFileComp
@@ -26,11 +26,19 @@ func newFirstCmd(opts Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if len(entries) == 0 {
+
+			// Filter to entries needing attention (PERM, ASK, IDLE).
+			var pending []*queue.Entry
+			for _, e := range entries {
+				if queue.NeedsAttention(e.Event) {
+					pending = append(pending, e)
+				}
+			}
+			if len(pending) == 0 {
 				return nil
 			}
-			sortByNewest(entries)
-			return jumpToEntry(entries[0])
+			sortForPicker(pending)
+			return jumpToEntry(pending[0])
 		},
 	}
 	cmd.Flags().Bool("full-tab", false, "Use stack layout to cover the entire tab, restore on exit")

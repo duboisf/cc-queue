@@ -11,12 +11,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const defaultHeader = "cc-queue — Claude Code session picker (auto-refreshes)"
+const defaultHeader = "cc-queue — Active Claude Code sessions (auto-refreshes)"
 
 func newListCmd(opts Options) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "List all pending items (plain text)",
+		Short: "List all active sessions (plain text)",
 		Args:  cobra.NoArgs,
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return nil, cobra.ShellCompDirectiveNoFileComp
@@ -27,11 +27,11 @@ func newListCmd(opts Options) *cobra.Command {
 				return err
 			}
 			if len(entries) == 0 {
-				fmt.Fprintln(opts.Stdout, "No pending items")
+				fmt.Fprintln(opts.Stdout, "No active sessions")
 				return nil
 			}
 
-			sortByNewest(entries)
+			sortForPicker(entries)
 			for _, e := range entries {
 				fmt.Fprintf(opts.Stdout, "%-5s %-4s  %s\n",
 					queue.FormatAge(e.Timestamp),
@@ -51,7 +51,7 @@ func fzfLines() string {
 	if err != nil || len(entries) == 0 {
 		return ""
 	}
-	sortByNewest(entries)
+	sortForPicker(entries)
 	var b strings.Builder
 	for _, e := range entries {
 		fmt.Fprintf(&b, "%s\t%-5s %-4s  %s\n",
@@ -105,20 +105,22 @@ func newPreviewCmd() *cobra.Command {
 	}
 }
 
-// jumpToEntry focuses the kitty window for the given entry and removes it from the queue.
+// jumpToEntry focuses the kitty window for the given entry.
+// Sessions persist — only stale entries (failed focus) are removed.
 func jumpToEntry(entry *queue.Entry) error {
-	if entry.KittyWindowID != "" {
-		kittyArgs := []string{"@"}
-		if entry.KittyListenOn != "" {
-			kittyArgs = append(kittyArgs, "--to", entry.KittyListenOn)
-		}
-		kittyArgs = append(kittyArgs, "focus-window", "--match", "id:"+entry.KittyWindowID)
-		cmd := exec.Command("kitty", kittyArgs...)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("kitty focus-window failed: %w\n%s", err, strings.TrimSpace(string(out)))
-		}
+	if entry.KittyWindowID == "" {
+		return nil
 	}
-	queue.Remove(entry.SessionID)
+	kittyArgs := []string{"@"}
+	if entry.KittyListenOn != "" {
+		kittyArgs = append(kittyArgs, "--to", entry.KittyListenOn)
+	}
+	kittyArgs = append(kittyArgs, "focus-window", "--match", "id:"+entry.KittyWindowID)
+	cmd := exec.Command("kitty", kittyArgs...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		queue.Remove(entry.SessionID)
+		return fmt.Errorf("kitty focus-window failed: %w\n%s", err, strings.TrimSpace(string(out)))
+	}
 	return nil
 }
 
@@ -143,14 +145,7 @@ func newJumpInternalCmd() *cobra.Command {
 					break
 				}
 			}
-			if target == nil {
-				return nil
-			}
-
-			// Always remove the entry regardless of jump result.
-			defer queue.Remove(target.SessionID)
-
-			if target.KittyWindowID == "" {
+			if target == nil || target.KittyWindowID == "" {
 				return nil
 			}
 
@@ -161,6 +156,8 @@ func newJumpInternalCmd() *cobra.Command {
 			kittyArgs = append(kittyArgs, "focus-window", "--match", "id:"+target.KittyWindowID)
 			kittyCmd := exec.Command("kitty", kittyArgs...)
 			if out, err := kittyCmd.CombinedOutput(); err != nil {
+				// Window is stale — remove the entry.
+				queue.Remove(target.SessionID)
 				return fmt.Errorf("window no longer exists: %s", strings.TrimSpace(string(out)))
 			}
 			return nil
@@ -214,7 +211,7 @@ func jumpRunE(opts Options) func(*cobra.Command, []string) error {
 			"--no-multi",
 			"--header-first",
 			"--header="+defaultHeader,
-			"--prompt=Pick a session to jump to it> ",
+			"--prompt=Jump to session> ",
 			"--preview="+previewCmd,
 			"--preview-window=down,wrap,40%",
 			"--bind=load:change-header("+defaultHeader+")+reload(sleep 2; "+reloadCmd+")",
@@ -228,8 +225,14 @@ func jumpRunE(opts Options) func(*cobra.Command, []string) error {
 	}
 }
 
-func sortByNewest(entries []*queue.Entry) {
-	sort.Slice(entries, func(i, j int) bool {
+// sortForPicker sorts entries with attention-needed sessions first, then by newest.
+func sortForPicker(entries []*queue.Entry) {
+	sort.SliceStable(entries, func(i, j int) bool {
+		ai := queue.NeedsAttention(entries[i].Event)
+		aj := queue.NeedsAttention(entries[j].Event)
+		if ai != aj {
+			return ai
+		}
 		return entries[i].Timestamp.After(entries[j].Timestamp)
 	})
 }

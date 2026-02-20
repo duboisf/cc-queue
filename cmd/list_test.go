@@ -19,7 +19,7 @@ func TestList_Empty(t *testing.T) {
 	}
 
 	got := stdout.String()
-	want := "No pending items\n"
+	want := "No active sessions\n"
 	if got != want {
 		t.Errorf("output = %q, want %q", got, want)
 	}
@@ -54,6 +54,53 @@ func TestList_WithEntries(t *testing.T) {
 	}
 }
 
+func TestList_WithWorkingEntry(t *testing.T) {
+	setupQueueDir(t)
+	opts, stdout, _ := testOptions()
+
+	seedEntry(t, "sess-work", "/home/user/project-a", "working", 1001)
+
+	root := cmd.NewRootCmd(opts)
+	_, _, err := executeCommand(root, "list")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := stdout.String()
+	if !strings.Contains(got, "WORK") {
+		t.Errorf("output missing WORK label:\n%s", got)
+	}
+}
+
+func TestList_AttentionFirstSorting(t *testing.T) {
+	setupQueueDir(t)
+	opts, stdout, _ := testOptions()
+
+	// Seed working entry first (older timestamp)
+	seedEntryAtTime(t, "sess-work", "/home/user/project-a", "working", 1001, -10)
+	// Then attention-needed entry (newer)
+	seedEntryAtTime(t, "sess-perm", "/home/user/project-b", "permission_prompt", 1002, -5)
+
+	root := cmd.NewRootCmd(opts)
+	_, _, err := executeCommand(root, "list")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := stdout.String()
+	lines := strings.Split(strings.TrimRight(got, "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines, got %d: %q", len(lines), got)
+	}
+	// PERM should come before WORK (attention-first sorting)
+	if !strings.Contains(lines[0], "PERM") {
+		t.Errorf("first line should have PERM, got %q", lines[0])
+	}
+	if !strings.Contains(lines[1], "WORK") {
+		t.Errorf("second line should have WORK, got %q", lines[1])
+	}
+}
+
 func TestList_OutputFormat(t *testing.T) {
 	setupQueueDir(t)
 	opts, stdout, _ := testOptions()
@@ -73,8 +120,6 @@ func TestList_OutputFormat(t *testing.T) {
 	}
 
 	line := lines[0]
-	// Format is "%-5s %-4s  %s\n" -> age(5) space label(4) two-spaces path
-	// The line should contain the PERM label and the path
 	if !strings.Contains(line, "PERM") {
 		t.Errorf("line missing PERM label: %q", line)
 	}
@@ -82,8 +127,6 @@ func TestList_OutputFormat(t *testing.T) {
 		t.Errorf("line missing path: %q", line)
 	}
 
-	// Verify column alignment: label starts after age field (5 chars + space)
-	// Age is left-aligned in 5 chars, then label in 4 chars, then two spaces, then path
 	parts := strings.Fields(line)
 	if len(parts) < 3 {
 		t.Fatalf("expected at least 3 fields, got %d: %q", len(parts), line)
@@ -149,6 +192,23 @@ func TestPreview_ExistingEntry(t *testing.T) {
 	}
 }
 
+func TestPreview_WorkingEntry(t *testing.T) {
+	setupQueueDir(t)
+	opts, _, _ := testOptions()
+
+	seedEntry(t, "sess-work", "/home/user/proj", "working", 1001)
+
+	root := cmd.NewRootCmd(opts)
+	stdout, _, err := executeCommand(root, "_preview", "sess-work")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(stdout, "WORK") {
+		t.Errorf("output missing WORK label:\n%s", stdout)
+	}
+}
+
 func TestPreview_MissingEntry(t *testing.T) {
 	setupQueueDir(t)
 	opts, _, _ := testOptions()
@@ -204,6 +264,9 @@ func TestFirst_FullTab_Called(t *testing.T) {
 	ft := &trackingFullTabber{}
 	opts.FullTabber = ft
 
+	// first needs an attention-needed entry to jump to.
+	seedEntry(t, "sess-first", "/home/user/proj", "permission_prompt", 1001)
+
 	root := cmd.NewRootCmd(opts)
 	_, _, _ = executeCommand(root, "first", "--full-tab")
 
@@ -212,6 +275,27 @@ func TestFirst_FullTab_Called(t *testing.T) {
 	}
 	if !ft.restored {
 		t.Error("restore was not called")
+	}
+}
+
+func TestFirst_SkipsWorkingSessions(t *testing.T) {
+	setupQueueDir(t)
+	opts, _, _ := testOptions()
+	ft := &trackingFullTabber{}
+	opts.FullTabber = ft
+
+	// Only working sessions — first should do nothing.
+	seedEntry(t, "sess-work", "/home/user/proj", "working", 1001)
+
+	root := cmd.NewRootCmd(opts)
+	_, _, err := executeCommand(root, "first")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// FullTabber should NOT have been called since there's nothing to jump to.
+	if ft.entered {
+		t.Error("EnterFullTab should not be called when only working sessions exist")
 	}
 }
 
@@ -241,11 +325,11 @@ func TestFirst_NoFullTab_NotCalled(t *testing.T) {
 	}
 }
 
-func TestJumpInternal_RemovesEntry(t *testing.T) {
+func TestJumpInternal_KeepsEntry(t *testing.T) {
 	setupQueueDir(t)
 	opts, _, _ := testOptions()
 
-	// Entry with no KittyWindowID — jump should succeed and remove it.
+	// Entry with no KittyWindowID — jump should succeed without removing.
 	seedEntryNoWindow(t, "sess-jump", "/home/user/proj", "permission_prompt", 1001)
 
 	root := cmd.NewRootCmd(opts)
@@ -253,8 +337,9 @@ func TestJumpInternal_RemovesEntry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if entryCount(t) != 0 {
-		t.Error("expected entry to be removed after jump")
+	// Entry should persist (no window ID means nothing to focus, but entry stays).
+	if entryCount(t) != 1 {
+		t.Error("expected entry to persist after jump (no window ID)")
 	}
 }
 
@@ -278,12 +363,12 @@ func TestJumpInternal_StaleWindow_RemovesEntry(t *testing.T) {
 
 	root := cmd.NewRootCmd(opts)
 	_, _, err := executeCommand(root, "_jump", "sess-stale")
-	// Error is expected (window doesn't exist), but entry should still be removed.
+	// Error is expected (window doesn't exist), and entry should be removed (stale).
 	if err == nil {
 		t.Log("kitty focus-window unexpectedly succeeded (kitty may be running)")
 	}
 	if entryCount(t) != 0 {
-		t.Error("expected entry to be removed even after failed jump")
+		t.Error("expected stale entry to be removed after failed jump")
 	}
 }
 

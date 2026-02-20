@@ -29,9 +29,16 @@ func EventLabel(event string) string {
 		return "ASK"
 	case "idle_prompt":
 		return "IDLE"
+	case "working":
+		return "WORK"
 	default:
 		return strings.ToUpper(event)
 	}
+}
+
+// NeedsAttention returns true if the event represents a state that needs user input.
+func NeedsAttention(event string) bool {
+	return event != "working" && event != ""
 }
 
 // ShortenPath replaces $HOME prefix with ~.

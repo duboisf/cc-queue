@@ -36,6 +36,7 @@ func TestEventLabel(t *testing.T) {
 		{"permission_prompt", "PERM"},
 		{"elicitation_dialog", "ASK"},
 		{"idle_prompt", "IDLE"},
+		{"working", "WORK"},
 		{"unknown_thing", "UNKNOWN_THING"},
 	}
 	for _, tt := range tests {
@@ -43,6 +44,27 @@ func TestEventLabel(t *testing.T) {
 			got := EventLabel(tt.event)
 			if got != tt.want {
 				t.Errorf("EventLabel(%q) = %q, want %q", tt.event, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNeedsAttention(t *testing.T) {
+	tests := []struct {
+		event string
+		want  bool
+	}{
+		{"permission_prompt", true},
+		{"elicitation_dialog", true},
+		{"idle_prompt", true},
+		{"working", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.event, func(t *testing.T) {
+			got := NeedsAttention(tt.event)
+			if got != tt.want {
+				t.Errorf("NeedsAttention(%q) = %v, want %v", tt.event, got, tt.want)
 			}
 		})
 	}
