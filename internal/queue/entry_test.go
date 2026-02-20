@@ -155,42 +155,30 @@ func TestCleanStale(t *testing.T) {
 	}
 }
 
-func TestCleanStale_SkipsWorkingEntries(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", tmp)
-
-	// Working entry with dead PID — should be skipped (not removed).
-	Write(&Entry{SessionID: "working-dead", PID: 999999999, Event: "working", Timestamp: time.Now()})
-	// Non-working entry with dead PID — should be removed.
-	Write(&Entry{SessionID: "perm-dead", PID: 999999999, Event: "permission_prompt", Timestamp: time.Now()})
-	// Working entry with alive PID — should be skipped.
-	Write(&Entry{SessionID: "working-alive", PID: os.Getpid(), Event: "working", Timestamp: time.Now()})
-
-	removed, err := CleanStale()
+func TestReadPPID_CurrentProcess(t *testing.T) {
+	// readPPID of our own PID should return our parent.
+	ppid, err := readPPID(os.Getpid())
 	if err != nil {
-		t.Fatalf("CleanStale: %v", err)
+		t.Fatalf("readPPID: %v", err)
 	}
-	if removed != 1 {
-		t.Errorf("removed = %d, want 1", removed)
+	if ppid != os.Getppid() {
+		t.Errorf("readPPID(self) = %d, want %d", ppid, os.Getppid())
 	}
+}
 
-	entries, _ := List()
-	if len(entries) != 2 {
-		t.Fatalf("got %d entries, want 2", len(entries))
+func TestReadPPID_InvalidPID(t *testing.T) {
+	_, err := readPPID(999999999)
+	if err == nil {
+		t.Error("expected error for non-existent PID")
 	}
+}
 
-	ids := map[string]bool{}
-	for _, e := range entries {
-		ids[e.SessionID] = true
-	}
-	if !ids["working-dead"] {
-		t.Error("working entry with dead PID should survive CleanStale")
-	}
-	if !ids["working-alive"] {
-		t.Error("working entry with alive PID should survive CleanStale")
-	}
-	if ids["perm-dead"] {
-		t.Error("non-working entry with dead PID should be removed")
+func TestAncestorPID_ReturnsGrandparent(t *testing.T) {
+	// AncestorPID walks up two levels: self → parent → grandparent.
+	// We can't easily test the exact value, but it should be > 0.
+	pid := AncestorPID()
+	if pid <= 0 {
+		t.Errorf("AncestorPID() = %d, want > 0", pid)
 	}
 }
 

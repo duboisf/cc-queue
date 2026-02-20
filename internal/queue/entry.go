@@ -2,8 +2,10 @@ package queue
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -103,6 +105,41 @@ func RemoveAll() error {
 	return nil
 }
 
+// AncestorPID returns the grandparent PID of the current process.
+// Hook commands are typically run via a shell (CC → sh → cc-queue),
+// so the grandparent is the Claude Code process, which stays alive
+// for the duration of the session. Falls back to os.Getppid() if
+// the grandparent cannot be determined.
+func AncestorPID() int {
+	ppid := os.Getppid()
+	grandparent, err := readPPID(ppid)
+	if err != nil {
+		return ppid
+	}
+	return grandparent
+}
+
+// readPPID reads the parent PID of a given PID from /proc/<pid>/stat.
+func readPPID(pid int) (int, error) {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return 0, err
+	}
+	// Format: pid (comm) state ppid ...
+	// comm may contain spaces/parens, so find the last ")".
+	s := string(data)
+	idx := strings.LastIndex(s, ")")
+	if idx < 0 || idx+2 >= len(s) {
+		return 0, fmt.Errorf("malformed /proc/%d/stat", pid)
+	}
+	fields := strings.Fields(s[idx+2:])
+	if len(fields) < 2 {
+		return 0, fmt.Errorf("not enough fields in /proc/%d/stat", pid)
+	}
+	// fields[0] = state, fields[1] = ppid
+	return strconv.Atoi(fields[1])
+}
+
 // IsProcessAlive checks whether a PID still exists.
 func IsProcessAlive(pid int) bool {
 	if pid <= 0 {
@@ -112,9 +149,6 @@ func IsProcessAlive(pid int) bool {
 }
 
 // CleanStale removes entries whose PID is no longer running.
-// Working entries are skipped because their PID is the short-lived hook
-// runner process, not the Claude Code process. They are cleaned by
-// window-based stale detection instead.
 // Returns the number of entries removed.
 func CleanStale() (int, error) {
 	entries, err := List()
@@ -124,10 +158,6 @@ func CleanStale() (int, error) {
 	Debugf("CLEAN_STALE found %d entries", len(entries))
 	removed := 0
 	for _, e := range entries {
-		if e.Event == "working" {
-			Debugf("CLEAN_STALE session=%s skip (working)", e.SessionID)
-			continue
-		}
 		alive := IsProcessAlive(e.PID)
 		Debugf("CLEAN_STALE session=%s pid=%d alive=%v", e.SessionID, e.PID, alive)
 		if !alive {

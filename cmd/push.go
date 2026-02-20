@@ -34,13 +34,13 @@ func newPushCmd(opts Options) *cobra.Command {
 				SessionID:     input.SessionID,
 				KittyWindowID: kittyWinID,
 				KittyListenOn: os.Getenv("KITTY_LISTEN_ON"),
-				PID:           os.Getppid(),
+				PID:           queue.AncestorPID(),
 				CWD:           input.CWD,
 				Event:         input.EventType(),
 				Message:       message,
 			}
 
-			queue.Debugf("PUSH session=%s event=%s ppid=%d", input.SessionID, input.EventType(), os.Getppid())
+			queue.Debugf("PUSH session=%s event=%s pid=%d", input.SessionID, input.EventType(), entry.PID)
 			return queue.Write(entry)
 		},
 	}

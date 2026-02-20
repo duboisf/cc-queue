@@ -35,7 +35,7 @@ func newPopCmd(opts Options) *cobra.Command {
 				SessionID:     input.SessionID,
 				KittyWindowID: kittyWinID,
 				KittyListenOn: os.Getenv("KITTY_LISTEN_ON"),
-				PID:           os.Getppid(),
+				PID:           queue.AncestorPID(),
 				CWD:           input.CWD,
 				Event:         "working",
 			}
