@@ -13,7 +13,7 @@ func TestNewRootCmd_HasExpectedSubcommands(t *testing.T) {
 
 	expected := []string{
 		"push", "pop", "list", "clear", "clean", "first",
-		"install", "completion", "version", "_list-fzf", "_preview",
+		"install", "completion", "version", "_list-fzf", "_preview", "_jump",
 	}
 	sort.Strings(expected)
 
@@ -58,5 +58,8 @@ func TestDefaultOptions_NonNil(t *testing.T) {
 	}
 	if opts.Stderr == nil {
 		t.Error("Stderr is nil")
+	}
+	if opts.CleanStaleWindowsFn == nil {
+		t.Error("CleanStaleWindowsFn is nil")
 	}
 }

@@ -155,6 +155,59 @@ func TestCleanStale(t *testing.T) {
 	}
 }
 
+func TestCleanStaleWindows(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", tmp)
+
+	Write(&Entry{SessionID: "valid", KittyWindowID: "10", Timestamp: time.Now()})
+	Write(&Entry{SessionID: "stale", KittyWindowID: "99", Timestamp: time.Now()})
+	Write(&Entry{SessionID: "no-wid", KittyWindowID: "", Timestamp: time.Now()})
+
+	validIDs := map[string]bool{"10": true, "20": true}
+	removed, err := CleanStaleWindows(validIDs)
+	if err != nil {
+		t.Fatalf("CleanStaleWindows: %v", err)
+	}
+	if removed != 1 {
+		t.Errorf("removed = %d, want 1", removed)
+	}
+
+	entries, _ := List()
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries, want 2", len(entries))
+	}
+
+	ids := map[string]bool{}
+	for _, e := range entries {
+		ids[e.SessionID] = true
+	}
+	if !ids["valid"] {
+		t.Error("expected 'valid' entry to remain")
+	}
+	if !ids["no-wid"] {
+		t.Error("expected 'no-wid' entry to remain (empty window ID should be skipped)")
+	}
+	if ids["stale"] {
+		t.Error("expected 'stale' entry to be removed")
+	}
+}
+
+func TestCleanStaleWindows_EmptyValidSet(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", tmp)
+
+	Write(&Entry{SessionID: "s1", KittyWindowID: "10", Timestamp: time.Now()})
+	Write(&Entry{SessionID: "s2", KittyWindowID: "20", Timestamp: time.Now()})
+
+	removed, err := CleanStaleWindows(map[string]bool{})
+	if err != nil {
+		t.Fatalf("CleanStaleWindows: %v", err)
+	}
+	if removed != 2 {
+		t.Errorf("removed = %d, want 2", removed)
+	}
+}
+
 func TestSessionIDSanitization(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", tmp)

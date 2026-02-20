@@ -11,6 +11,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const defaultHeader = "cc-queue: select to jump to claude code session (live)"
+
 func newListCmd(opts Options) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
@@ -62,12 +64,15 @@ func fzfLines() string {
 	return b.String()
 }
 
-func newListFzfCmd() *cobra.Command {
+func newListFzfCmd(opts Options) *cobra.Command {
 	return &cobra.Command{
 		Use:    "_list-fzf",
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
+			if opts.CleanStaleWindowsFn != nil {
+				opts.CleanStaleWindowsFn()
+			}
 			fmt.Fprint(cmd.OutOrStdout(), fzfLines())
 		},
 	}
@@ -103,12 +108,12 @@ func newPreviewCmd() *cobra.Command {
 // jumpToEntry focuses the kitty window for the given entry and removes it from the queue.
 func jumpToEntry(entry *queue.Entry) error {
 	if entry.KittyWindowID != "" {
-		args := []string{"@"}
+		kittyArgs := []string{"@"}
 		if entry.KittyListenOn != "" {
-			args = append(args, "--to", entry.KittyListenOn)
+			kittyArgs = append(kittyArgs, "--to", entry.KittyListenOn)
 		}
-		args = append(args, "focus-window", "--match", "id:"+entry.KittyWindowID)
-		cmd := exec.Command("kitty", args...)
+		kittyArgs = append(kittyArgs, "focus-window", "--match", "id:"+entry.KittyWindowID)
+		cmd := exec.Command("kitty", kittyArgs...)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("kitty focus-window failed: %w\n%s", err, strings.TrimSpace(string(out)))
 		}
@@ -117,9 +122,74 @@ func jumpToEntry(entry *queue.Entry) error {
 	return nil
 }
 
+func newJumpInternalCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:    "_jump [session_id]",
+		Hidden: true,
+		Args:   cobra.ExactArgs(1),
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			return sessionIDCompletions(toComplete), cobra.ShellCompDirectiveNoFileComp
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			sessionID := args[0]
+			entries, err := queue.List()
+			if err != nil {
+				return err
+			}
+			var target *queue.Entry
+			for _, e := range entries {
+				if e.SessionID == sessionID {
+					target = e
+					break
+				}
+			}
+			if target == nil {
+				return nil
+			}
+
+			// Always remove the entry regardless of jump result.
+			defer queue.Remove(target.SessionID)
+
+			if target.KittyWindowID == "" {
+				return nil
+			}
+
+			kittyArgs := []string{"@"}
+			if target.KittyListenOn != "" {
+				kittyArgs = append(kittyArgs, "--to", target.KittyListenOn)
+			}
+			kittyArgs = append(kittyArgs, "focus-window", "--match", "id:"+target.KittyWindowID)
+			kittyCmd := exec.Command("kitty", kittyArgs...)
+			if out, err := kittyCmd.CombinedOutput(); err != nil {
+				return fmt.Errorf("window no longer exists: %s", strings.TrimSpace(string(out)))
+			}
+			return nil
+		},
+	}
+}
+
+func sessionIDCompletions(toComplete string) []string {
+	entries, err := queue.List()
+	if err != nil {
+		return nil
+	}
+	var ids []string
+	for _, e := range entries {
+		if strings.HasPrefix(e.SessionID, toComplete) {
+			ids = append(ids, e.SessionID)
+		}
+	}
+	return ids
+}
+
 // jumpRunE returns the RunE function for the root command (live fzf picker).
 func jumpRunE(opts Options) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
+		queue.CleanStale()
+		if opts.CleanStaleWindowsFn != nil {
+			opts.CleanStaleWindowsFn()
+		}
+
 		if fullTab, _ := cmd.Flags().GetBool("full-tab"); fullTab {
 			restore, err := opts.FullTabber.EnterFullTab()
 			if err != nil {
@@ -134,6 +204,7 @@ func jumpRunE(opts Options) func(*cobra.Command, []string) error {
 		}
 		reloadCmd := self + " _list-fzf"
 		previewCmd := self + " _preview {1}"
+		jumpCmd := self + " _jump {1}"
 
 		fzf := exec.Command("fzf",
 			"--height=50%",
@@ -141,43 +212,18 @@ func jumpRunE(opts Options) func(*cobra.Command, []string) error {
 			"--with-nth=2..",
 			"--delimiter=\t",
 			"--no-multi",
-			"--header=cc-queue: select to jump to claude code session (live)",
+			"--header="+defaultHeader,
 			"--prompt=cc-queue> ",
 			"--preview="+previewCmd,
 			"--preview-window=down,wrap,40%",
-			"--bind=load:reload(sleep 1; "+reloadCmd+")",
+			"--bind=load:change-header("+defaultHeader+")+reload(sleep 2; "+reloadCmd+")",
+			"--bind=enter:transform("+jumpCmd+" >/dev/null 2>&1 && echo abort || echo \"change-header(⚠ Kitty window closed — entry removed)\")",
 		)
 		fzf.Stdin = strings.NewReader(fzfLines())
 		fzf.Stderr = opts.Stderr
 
-		// fzf writes the selected line to stdout, but since we need to capture
-		// it separately from opts.Stdout, use a pipe.
-		out, err := fzf.Output()
-		if err != nil {
-			return nil // user cancelled or fzf error
-		}
-
-		selected := strings.TrimSpace(string(out))
-		if selected == "" {
-			return nil
-		}
-
-		sessionID, _, _ := strings.Cut(selected, "\t")
-
-		// Re-read entries since the list may have changed during fzf.
-		entries, _ := queue.List()
-		var target *queue.Entry
-		for _, e := range entries {
-			if e.SessionID == sessionID {
-				target = e
-				break
-			}
-		}
-		if target == nil {
-			return nil // entry was removed while fzf was open
-		}
-
-		return jumpToEntry(target)
+		fzf.Run()
+		return nil
 	}
 }
 

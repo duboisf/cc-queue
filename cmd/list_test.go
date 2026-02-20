@@ -240,3 +240,83 @@ func TestFirst_NoFullTab_NotCalled(t *testing.T) {
 		t.Error("EnterFullTab should not be called without --full-tab")
 	}
 }
+
+func TestJumpInternal_RemovesEntry(t *testing.T) {
+	setupQueueDir(t)
+	opts, _, _ := testOptions()
+
+	// Entry with no KittyWindowID — jump should succeed and remove it.
+	seedEntryNoWindow(t, "sess-jump", "/home/user/proj", "permission_prompt", 1001)
+
+	root := cmd.NewRootCmd(opts)
+	_, _, err := executeCommand(root, "_jump", "sess-jump")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if entryCount(t) != 0 {
+		t.Error("expected entry to be removed after jump")
+	}
+}
+
+func TestJumpInternal_MissingEntry(t *testing.T) {
+	setupQueueDir(t)
+	opts, _, _ := testOptions()
+
+	root := cmd.NewRootCmd(opts)
+	_, _, err := executeCommand(root, "_jump", "nonexistent")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestJumpInternal_StaleWindow_RemovesEntry(t *testing.T) {
+	setupQueueDir(t)
+	opts, _, _ := testOptions()
+
+	// Entry with a window ID that won't exist — kitty @ focus-window will fail.
+	seedEntry(t, "sess-stale", "/home/user/proj", "permission_prompt", 1001)
+
+	root := cmd.NewRootCmd(opts)
+	_, _, err := executeCommand(root, "_jump", "sess-stale")
+	// Error is expected (window doesn't exist), but entry should still be removed.
+	if err == nil {
+		t.Log("kitty focus-window unexpectedly succeeded (kitty may be running)")
+	}
+	if entryCount(t) != 0 {
+		t.Error("expected entry to be removed even after failed jump")
+	}
+}
+
+func TestListFzf_CleanStaleWindowsCalled(t *testing.T) {
+	setupQueueDir(t)
+	opts, _, _ := testOptions()
+
+	called := false
+	opts.CleanStaleWindowsFn = func() { called = true }
+
+	root := cmd.NewRootCmd(opts)
+	_, _, err := executeCommand(root, "_list-fzf")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !called {
+		t.Error("CleanStaleWindowsFn was not called")
+	}
+}
+
+func TestListFzf_NilCleanStaleWindowsFn(t *testing.T) {
+	setupQueueDir(t)
+	opts, _, _ := testOptions()
+	opts.CleanStaleWindowsFn = nil
+
+	seedEntry(t, "sess-nil", "/home/user/proj", "permission_prompt", 1001)
+
+	root := cmd.NewRootCmd(opts)
+	stdout, _, err := executeCommand(root, "_list-fzf")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(stdout, "sess-nil\t") {
+		t.Errorf("output missing entry:\n%s", stdout)
+	}
+}

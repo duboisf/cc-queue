@@ -82,6 +82,21 @@ func seedEntryWithMessage(t *testing.T, sessionID, cwd, event string, pid int, m
 	}
 }
 
+// seedEntryNoWindow writes a queue entry without a KittyWindowID for testing.
+func seedEntryNoWindow(t *testing.T, sessionID, cwd, event string, pid int) {
+	t.Helper()
+	err := queue.Write(&queue.Entry{
+		Timestamp: time.Now(),
+		SessionID: sessionID,
+		PID:       pid,
+		CWD:       cwd,
+		Event:     event,
+	})
+	if err != nil {
+		t.Fatalf("seedEntryNoWindow: %v", err)
+	}
+}
+
 // executeCommand runs a cobra command with args and captures output.
 func executeCommand(root *cobra.Command, args ...string) (stdout, stderr string, err error) {
 	outBuf := new(bytes.Buffer)

@@ -131,3 +131,26 @@ func CleanStale() (int, error) {
 	}
 	return removed, nil
 }
+
+// CleanStaleWindows removes entries whose KittyWindowID is not in the valid set.
+// Entries with an empty KittyWindowID are skipped.
+// Returns the number of entries removed.
+func CleanStaleWindows(validWindowIDs map[string]bool) (int, error) {
+	entries, err := List()
+	if err != nil {
+		return 0, err
+	}
+	removed := 0
+	for _, e := range entries {
+		if e.KittyWindowID == "" {
+			continue
+		}
+		if !validWindowIDs[e.KittyWindowID] {
+			Debugf("CLEAN_STALE_WINDOW session=%s wid=%s", e.SessionID, e.KittyWindowID)
+			if err := Remove(e.SessionID); err == nil {
+				removed++
+			}
+		}
+	}
+	return removed, nil
+}

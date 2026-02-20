@@ -3,9 +3,11 @@ package cmd
 import (
 	"io"
 	"os"
+	"os/exec"
 	"time"
 
 	"github.com/duboisf/cc-queue/internal/kitty"
+	"github.com/duboisf/cc-queue/internal/queue"
 	"github.com/spf13/cobra"
 )
 
@@ -21,6 +23,8 @@ type Options struct {
 	Stderr io.Writer
 	// FullTabber manages kitty tab layout for full-tab overlays.
 	FullTabber kitty.FullTabber
+	// CleanStaleWindowsFn removes entries with dead kitty windows. Nil to skip.
+	CleanStaleWindowsFn func()
 }
 
 // NewRootCmd creates the root cobra command with all subcommands wired up.
@@ -77,8 +81,9 @@ func NewRootCmd(opts Options) *cobra.Command {
 		installCmd,
 		completionCmd,
 		versionCmd,
-		newListFzfCmd(),
+		newListFzfCmd(opts),
 		newPreviewCmd(),
+		newJumpInternalCmd(),
 	)
 	return root
 }
@@ -97,5 +102,16 @@ func DefaultOptions() Options {
 		Stdout:     os.Stdout,
 		Stderr:     os.Stderr,
 		FullTabber: kitty.NewLayoutManager(),
+		CleanStaleWindowsFn: func() {
+			out, err := exec.Command("kitty", "@", "ls").Output()
+			if err != nil {
+				return
+			}
+			ids, err := kitty.ParseWindowIDs(out)
+			if err != nil {
+				return
+			}
+			queue.CleanStaleWindows(ids)
+		},
 	}
 }
