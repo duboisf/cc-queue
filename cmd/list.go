@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const defaultHeader = "cc-queue: select to jump to claude code session (live)"
+const defaultHeader = "cc-queue — Claude Code session picker (auto-refreshes)"
 
 func newListCmd(opts Options) *cobra.Command {
 	return &cobra.Command{
@@ -212,8 +212,9 @@ func jumpRunE(opts Options) func(*cobra.Command, []string) error {
 			"--with-nth=2..",
 			"--delimiter=\t",
 			"--no-multi",
+			"--header-first",
 			"--header="+defaultHeader,
-			"--prompt=cc-queue> ",
+			"--prompt=Pick a session to jump to it> ",
 			"--preview="+previewCmd,
 			"--preview-window=down,wrap,40%",
 			"--bind=load:change-header("+defaultHeader+")+reload(sleep 2; "+reloadCmd+")",
