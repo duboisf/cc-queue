@@ -112,6 +112,9 @@ func IsProcessAlive(pid int) bool {
 }
 
 // CleanStale removes entries whose PID is no longer running.
+// Working entries are skipped because their PID is the short-lived hook
+// runner process, not the Claude Code process. They are cleaned by
+// window-based stale detection instead.
 // Returns the number of entries removed.
 func CleanStale() (int, error) {
 	entries, err := List()
@@ -121,6 +124,10 @@ func CleanStale() (int, error) {
 	Debugf("CLEAN_STALE found %d entries", len(entries))
 	removed := 0
 	for _, e := range entries {
+		if e.Event == "working" {
+			Debugf("CLEAN_STALE session=%s skip (working)", e.SessionID)
+			continue
+		}
 		alive := IsProcessAlive(e.PID)
 		Debugf("CLEAN_STALE session=%s pid=%d alive=%v", e.SessionID, e.PID, alive)
 		if !alive {

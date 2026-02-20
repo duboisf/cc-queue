@@ -155,6 +155,45 @@ func TestCleanStale(t *testing.T) {
 	}
 }
 
+func TestCleanStale_SkipsWorkingEntries(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", tmp)
+
+	// Working entry with dead PID — should be skipped (not removed).
+	Write(&Entry{SessionID: "working-dead", PID: 999999999, Event: "working", Timestamp: time.Now()})
+	// Non-working entry with dead PID — should be removed.
+	Write(&Entry{SessionID: "perm-dead", PID: 999999999, Event: "permission_prompt", Timestamp: time.Now()})
+	// Working entry with alive PID — should be skipped.
+	Write(&Entry{SessionID: "working-alive", PID: os.Getpid(), Event: "working", Timestamp: time.Now()})
+
+	removed, err := CleanStale()
+	if err != nil {
+		t.Fatalf("CleanStale: %v", err)
+	}
+	if removed != 1 {
+		t.Errorf("removed = %d, want 1", removed)
+	}
+
+	entries, _ := List()
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries, want 2", len(entries))
+	}
+
+	ids := map[string]bool{}
+	for _, e := range entries {
+		ids[e.SessionID] = true
+	}
+	if !ids["working-dead"] {
+		t.Error("working entry with dead PID should survive CleanStale")
+	}
+	if !ids["working-alive"] {
+		t.Error("working entry with alive PID should survive CleanStale")
+	}
+	if ids["perm-dead"] {
+		t.Error("non-working entry with dead PID should be removed")
+	}
+}
+
 func TestCleanStaleWindows(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", tmp)
