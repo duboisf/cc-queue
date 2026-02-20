@@ -121,6 +121,69 @@ func TestInstallHooks_PreservesExisting(t *testing.T) {
 	}
 }
 
+func TestInstallHooks_NoDuplicateWhenCommandPrefixed(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+
+	// Simulate user having modified the command with an env var prefix.
+	dir := filepath.Join(tmp, ".claude")
+	os.MkdirAll(dir, 0755)
+
+	existing := map[string]any{
+		"hooks": map[string]any{
+			"Notification": []any{
+				map[string]any{
+					"matcher": notificationMatcher,
+					"hooks": []any{
+						map[string]any{
+							"type":    "command",
+							"command": "CC_QUEUE_DEBUG=1 cc-queue push",
+						},
+					},
+				},
+			},
+			"UserPromptSubmit": []any{
+				map[string]any{
+					"matcher": "",
+					"hooks": []any{
+						map[string]any{
+							"type":    "command",
+							"command": "CC_QUEUE_DEBUG=1 cc-queue pop",
+						},
+					},
+				},
+			},
+		},
+	}
+	data, _ := json.MarshalIndent(existing, "", "  ")
+	os.WriteFile(filepath.Join(dir, "settings.json"), data, 0644)
+
+	if err := InstallHooks(TargetUser); err != nil {
+		t.Fatalf("InstallHooks: %v", err)
+	}
+
+	result, _ := os.ReadFile(filepath.Join(dir, "settings.json"))
+	var settings map[string]any
+	json.Unmarshal(result, &settings)
+	hooks := settings["hooks"].(map[string]any)
+
+	notif := hooks["Notification"].([]any)
+	if len(notif) != 1 {
+		t.Errorf("Notification matchers = %d, want 1 (should not duplicate prefixed command)", len(notif))
+	}
+
+	ups := hooks["UserPromptSubmit"].([]any)
+	// Should still be 1 matcher group with 1 hook (no duplicate pop added).
+	if len(ups) != 1 {
+		t.Errorf("UserPromptSubmit matchers = %d, want 1", len(ups))
+	}
+	matcher := ups[0].(map[string]any)
+	hooksList := matcher["hooks"].([]any)
+	if len(hooksList) != 1 {
+		t.Errorf("UserPromptSubmit hooks = %d, want 1 (should not duplicate prefixed command)", len(hooksList))
+	}
+}
+
 func TestInstallHooks_ProjectTarget(t *testing.T) {
 	tmp := t.TempDir()
 	// Change to temp dir to test project-level install.

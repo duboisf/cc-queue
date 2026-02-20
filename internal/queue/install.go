@@ -269,6 +269,8 @@ func InstallKittyConfig(shortcuts KittyShortcuts) (*KittyInstallResult, error) {
 }
 
 // hasHookCommand checks if any matcher entry already contains the given command.
+// It uses a substring match so that prefixed variants like
+// "CC_QUEUE_DEBUG=1 cc-queue push" are recognized as already installed.
 func hasHookCommand(matchers []any, command string) bool {
 	for _, m := range matchers {
 		matcher, ok := m.(map[string]any)
@@ -284,7 +286,7 @@ func hasHookCommand(matchers []any, command string) bool {
 			if !ok {
 				continue
 			}
-			if cmd, ok := hook["command"].(string); ok && cmd == command {
+			if cmd, ok := hook["command"].(string); ok && strings.Contains(cmd, command) {
 				return true
 			}
 		}
