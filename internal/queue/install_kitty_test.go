@@ -77,6 +77,49 @@ func TestBuildKittyConfig_NoShortcuts(t *testing.T) {
 	}
 }
 
+func TestParseKittyShortcuts_BothShortcuts(t *testing.T) {
+	content := BuildKittyConfig(testShortcuts)
+	got := ParseKittyShortcuts(content)
+
+	if got.Picker != "kitty_mod+shift+q" {
+		t.Errorf("Picker = %q, want %q", got.Picker, "kitty_mod+shift+q")
+	}
+	if got.First != "kitty_mod+shift+u" {
+		t.Errorf("First = %q, want %q", got.First, "kitty_mod+shift+u")
+	}
+}
+
+func TestParseKittyShortcuts_PickerOnly(t *testing.T) {
+	content := BuildKittyConfig(KittyShortcuts{Picker: "ctrl+alt+p"})
+	got := ParseKittyShortcuts(content)
+
+	if got.Picker != "ctrl+alt+p" {
+		t.Errorf("Picker = %q, want %q", got.Picker, "ctrl+alt+p")
+	}
+	if got.First != "" {
+		t.Errorf("First = %q, want empty", got.First)
+	}
+}
+
+func TestParseKittyShortcuts_NoShortcuts(t *testing.T) {
+	content := BuildKittyConfig(KittyShortcuts{})
+	got := ParseKittyShortcuts(content)
+
+	if got.Picker != "" {
+		t.Errorf("Picker = %q, want empty", got.Picker)
+	}
+	if got.First != "" {
+		t.Errorf("First = %q, want empty", got.First)
+	}
+}
+
+func TestParseKittyShortcuts_EmptyContent(t *testing.T) {
+	got := ParseKittyShortcuts("")
+	if got.Picker != "" || got.First != "" {
+		t.Errorf("expected empty shortcuts, got Picker=%q First=%q", got.Picker, got.First)
+	}
+}
+
 func TestInstallKittyConfig_FreshInstall(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
@@ -86,12 +129,15 @@ func TestInstallKittyConfig_FreshInstall(t *testing.T) {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 
-	result, err := InstallKittyConfig(testShortcuts)
+	result, err := InstallKittyConfig(testShortcuts, false)
 	if err != nil {
 		t.Fatalf("InstallKittyConfig: %v", err)
 	}
 	if result == nil {
 		t.Fatal("expected non-nil result")
+	}
+	if result.Skipped {
+		t.Error("expected Skipped=false on fresh install")
 	}
 
 	// cc-queue.conf created with correct content.
@@ -120,7 +166,38 @@ func TestInstallKittyConfig_FreshInstall(t *testing.T) {
 	}
 }
 
-func TestInstallKittyConfig_ReplacesExisting(t *testing.T) {
+func TestInstallKittyConfig_SkipsExistingWithoutForce(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+
+	kittyDir := filepath.Join(tmp, ".config", "kitty")
+	os.MkdirAll(kittyDir, 0755)
+
+	// First install creates cc-queue.conf.
+	_, err := InstallKittyConfig(testShortcuts, false)
+	if err != nil {
+		t.Fatalf("first install: %v", err)
+	}
+
+	// Second install without force — should skip writing cc-queue.conf.
+	noShortcuts := KittyShortcuts{}
+	result, err := InstallKittyConfig(noShortcuts, false)
+	if err != nil {
+		t.Fatalf("second install: %v", err)
+	}
+
+	if !result.Skipped {
+		t.Error("expected Skipped=true when file exists and force=false")
+	}
+
+	// Original shortcuts should still be in cc-queue.conf (not overwritten).
+	content, _ := os.ReadFile(filepath.Join(kittyDir, "cc-queue.conf"))
+	if !strings.Contains(string(content), "kitty_mod+shift+q") {
+		t.Error("original shortcuts were overwritten despite skip")
+	}
+}
+
+func TestInstallKittyConfig_ForceOverwritesExisting(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 
@@ -128,16 +205,20 @@ func TestInstallKittyConfig_ReplacesExisting(t *testing.T) {
 	os.MkdirAll(kittyDir, 0755)
 
 	// First install.
-	_, err := InstallKittyConfig(testShortcuts)
+	_, err := InstallKittyConfig(testShortcuts, false)
 	if err != nil {
 		t.Fatalf("first install: %v", err)
 	}
 
-	// Second install with different shortcuts — cc-queue.conf overwritten.
+	// Second install with force and different shortcuts — should overwrite.
 	newShortcuts := KittyShortcuts{Picker: "ctrl+alt+p", First: "ctrl+alt+f"}
-	result, err := InstallKittyConfig(newShortcuts)
+	result, err := InstallKittyConfig(newShortcuts, true)
 	if err != nil {
 		t.Fatalf("second install: %v", err)
+	}
+
+	if result.Skipped {
+		t.Error("expected Skipped=false with force=true")
 	}
 
 	content, _ := os.ReadFile(result.ConfPath)
@@ -168,7 +249,7 @@ func TestInstallKittyConfig_PreservesExistingConf(t *testing.T) {
 	mainConf := filepath.Join(kittyDir, "kitty.conf")
 	os.WriteFile(mainConf, []byte(existing), 0644)
 
-	result, err := InstallKittyConfig(testShortcuts)
+	result, err := InstallKittyConfig(testShortcuts, false)
 	if err != nil {
 		t.Fatalf("InstallKittyConfig: %v", err)
 	}
@@ -202,7 +283,7 @@ func TestInstallKittyConfig_CleansLegacyBlock(t *testing.T) {
 	mainConf := filepath.Join(kittyDir, "kitty.conf")
 	os.WriteFile(mainConf, []byte(legacy), 0644)
 
-	_, err := InstallKittyConfig(testShortcuts)
+	_, err := InstallKittyConfig(testShortcuts, false)
 	if err != nil {
 		t.Fatalf("InstallKittyConfig: %v", err)
 	}
@@ -218,11 +299,41 @@ func TestInstallKittyConfig_CleansLegacyBlock(t *testing.T) {
 	}
 }
 
+func TestInstallKittyConfig_SkipsExistingButStillAddsInclude(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+
+	kittyDir := filepath.Join(tmp, ".config", "kitty")
+	os.MkdirAll(kittyDir, 0755)
+
+	// Manually create cc-queue.conf (simulating manual edit).
+	confPath := filepath.Join(kittyDir, "cc-queue.conf")
+	os.WriteFile(confPath, []byte("# my custom config\n"), 0644)
+
+	// No kitty.conf yet — include should still be added even though conf is skipped.
+	result, err := InstallKittyConfig(KittyShortcuts{}, false)
+	if err != nil {
+		t.Fatalf("InstallKittyConfig: %v", err)
+	}
+
+	if !result.Skipped {
+		t.Error("expected Skipped=true")
+	}
+	if !result.Included {
+		t.Error("expected Included=true even when conf was skipped")
+	}
+
+	mainContent, _ := os.ReadFile(filepath.Join(kittyDir, "kitty.conf"))
+	if !strings.Contains(string(mainContent), "include cc-queue.conf") {
+		t.Error("kitty.conf missing include directive")
+	}
+}
+
 func TestInstallKittyConfig_MissingKittyDir(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 
-	result, err := InstallKittyConfig(testShortcuts)
+	result, err := InstallKittyConfig(testShortcuts, false)
 	if err != nil {
 		t.Fatalf("InstallKittyConfig: %v", err)
 	}

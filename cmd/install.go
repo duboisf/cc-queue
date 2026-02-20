@@ -10,7 +10,7 @@ import (
 )
 
 func newInstallCmd(opts Options) *cobra.Command {
-	var user, project bool
+	var user, project, force bool
 	var pickerShortcut, firstShortcut string
 
 	cmd := &cobra.Command{
@@ -39,6 +39,18 @@ func newInstallCmd(opts Options) *cobra.Command {
 				Shell:  os.Getenv("SHELL"),
 			}
 
+			// When --force overwriting an existing file, preserve shortcuts
+			// that the user didn't explicitly override via flags.
+			if force {
+				existing := readExistingShortcuts()
+				if !cmd.Flags().Changed("picker-shortcut") {
+					shortcuts.Picker = existing.Picker
+				}
+				if !cmd.Flags().Changed("first-shortcut") {
+					shortcuts.First = existing.First
+				}
+			}
+
 			// Preview the kitty config content before writing.
 			content := queue.BuildKittyConfig(shortcuts)
 			fmt.Fprintf(opts.Stdout, "\nCreating kitty config with:\n\n")
@@ -46,17 +58,21 @@ func newInstallCmd(opts Options) *cobra.Command {
 				fmt.Fprintf(opts.Stdout, "  %s\n", line)
 			}
 
-			result, err := queue.InstallKittyConfig(shortcuts)
+			result, err := queue.InstallKittyConfig(shortcuts, force)
 			if err != nil {
 				return err
 			}
-			if result != nil {
-				fmt.Fprintf(opts.Stdout, "Created %s\n", result.ConfPath)
-				if result.Included {
-					fmt.Fprintf(opts.Stdout, "Added 'include cc-queue.conf' to %s\n", result.MainConf)
-				}
-			} else {
+			if result == nil {
 				fmt.Fprintln(opts.Stdout, "Kitty config dir not found, skipping")
+				return nil
+			}
+			if result.Skipped {
+				fmt.Fprintf(opts.Stdout, "%s already exists, skipping (use --force to overwrite)\n", result.ConfPath)
+			} else {
+				fmt.Fprintf(opts.Stdout, "Created %s\n", result.ConfPath)
+			}
+			if result.Included {
+				fmt.Fprintf(opts.Stdout, "Added 'include cc-queue.conf' to %s\n", result.MainConf)
 			}
 
 			return nil
@@ -65,12 +81,29 @@ func newInstallCmd(opts Options) *cobra.Command {
 
 	cmd.Flags().BoolVar(&user, "user", false, "Install to ~/.claude/settings.json (default)")
 	cmd.Flags().BoolVar(&project, "project", false, "Install to .claude/settings.json in cwd")
+	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing cc-queue.conf (preserves shortcuts unless overridden)")
 	cmd.Flags().StringVar(&pickerShortcut, "picker-shortcut", "", "Kitty shortcut for fzf picker overlay (e.g. 'kitty_mod+shift+q')")
 	cmd.Flags().StringVar(&firstShortcut, "first-shortcut", "", "Kitty shortcut for jump-to-first (e.g. 'kitty_mod+shift+u')")
 	_ = cmd.RegisterFlagCompletionFunc("user", cobra.NoFileCompletions)
 	_ = cmd.RegisterFlagCompletionFunc("project", cobra.NoFileCompletions)
+	_ = cmd.RegisterFlagCompletionFunc("force", cobra.NoFileCompletions)
 	_ = cmd.RegisterFlagCompletionFunc("picker-shortcut", cobra.NoFileCompletions)
 	_ = cmd.RegisterFlagCompletionFunc("first-shortcut", cobra.NoFileCompletions)
 
 	return cmd
+}
+
+// readExistingShortcuts reads shortcuts from the existing cc-queue.conf file.
+// Returns empty shortcuts if the file doesn't exist or can't be parsed.
+func readExistingShortcuts() queue.KittyShortcuts {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return queue.KittyShortcuts{}
+	}
+	confPath := home + "/.config/kitty/cc-queue.conf"
+	data, err := os.ReadFile(confPath)
+	if err != nil {
+		return queue.KittyShortcuts{}
+	}
+	return queue.ParseKittyShortcuts(string(data))
 }

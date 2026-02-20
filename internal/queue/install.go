@@ -184,6 +184,7 @@ type KittyInstallResult struct {
 	Content  string // content of cc-queue.conf
 	MainConf string // path to kitty.conf
 	Included bool   // whether an include line was added to kitty.conf
+	Skipped  bool   // true if cc-queue.conf already existed and force was false
 }
 
 // kittyBlockRe matches legacy cc-queue blocks written directly into kitty.conf.
@@ -217,10 +218,36 @@ func BuildKittyConfig(shortcuts KittyShortcuts) string {
 	return b.String()
 }
 
+// ParseKittyShortcuts extracts shortcut keys from existing cc-queue.conf content.
+// It looks for "map <key> ... cc-queue" lines and distinguishes picker vs first
+// by whether the line ends with the "first" subcommand.
+func ParseKittyShortcuts(content string) KittyShortcuts {
+	var shortcuts KittyShortcuts
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "map ") || !strings.Contains(line, "cc-queue") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		key := fields[1]
+		if strings.HasSuffix(line, "first'") {
+			shortcuts.First = key
+		} else {
+			shortcuts.Picker = key
+		}
+	}
+	return shortcuts
+}
+
 // InstallKittyConfig creates cc-queue.conf in the kitty config directory and
 // adds an include directive to kitty.conf. Returns nil if the kitty config
-// directory doesn't exist.
-func InstallKittyConfig(shortcuts KittyShortcuts) (*KittyInstallResult, error) {
+// directory doesn't exist. If force is false and cc-queue.conf already exists,
+// the file is not overwritten (Skipped is set to true in the result), but the
+// include directive is still ensured.
+func InstallKittyConfig(shortcuts KittyShortcuts, force bool) (*KittyInstallResult, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
@@ -233,13 +260,22 @@ func InstallKittyConfig(shortcuts KittyShortcuts) (*KittyInstallResult, error) {
 
 	confPath := filepath.Join(kittyDir, "cc-queue.conf")
 	mainConf := filepath.Join(kittyDir, "kitty.conf")
+
+	_, statErr := os.Stat(confPath)
+	confExists := statErr == nil
+
+	skipped := false
 	content := BuildKittyConfig(shortcuts)
 
-	if err := os.WriteFile(confPath, []byte(content), 0644); err != nil {
-		return nil, fmt.Errorf("writing %s: %w", confPath, err)
+	if confExists && !force {
+		skipped = true
+	} else {
+		if err := os.WriteFile(confPath, []byte(content), 0644); err != nil {
+			return nil, fmt.Errorf("writing %s: %w", confPath, err)
+		}
 	}
 
-	// Add include directive to kitty.conf if not already present.
+	// Always ensure the include directive in kitty.conf.
 	mainContent, err := os.ReadFile(mainConf)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("reading %s: %w", mainConf, err)
@@ -265,6 +301,7 @@ func InstallKittyConfig(shortcuts KittyShortcuts) (*KittyInstallResult, error) {
 		Content:  content,
 		MainConf: mainConf,
 		Included: included,
+		Skipped:  skipped,
 	}, nil
 }
 
