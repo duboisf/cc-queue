@@ -31,6 +31,10 @@ func EventLabel(event string) string {
 		return "IDLE"
 	case "working":
 		return "WORK"
+	case "SessionStart":
+		return "START"
+	case "SessionEnd":
+		return "END"
 	default:
 		return strings.ToUpper(event)
 	}
@@ -38,7 +42,12 @@ func EventLabel(event string) string {
 
 // NeedsAttention returns true if the event represents a state that needs user input.
 func NeedsAttention(event string) bool {
-	return event != "working" && event != ""
+	switch event {
+	case "", "working", "SessionStart", "SessionEnd":
+		return false
+	default:
+		return true
+	}
 }
 
 // ShortenPath replaces $HOME prefix with ~.

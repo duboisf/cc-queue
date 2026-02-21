@@ -3,6 +3,7 @@ package queue
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -22,6 +23,29 @@ type Entry struct {
 	Event         string    `json:"event"`
 	Message       string    `json:"message,omitempty"`
 }
+
+// SessionFile wraps the current entry with a capped history of previous entries.
+type SessionFile struct {
+	Current *Entry   `json:"current"`
+	History []*Entry `json:"history,omitempty"`
+}
+
+// MaxHistory is the maximum number of historical entries to retain.
+const MaxHistory = 10
+
+// Locker abstracts file locking for testability.
+type Locker interface {
+	Lock(fd int) error
+	Unlock(fd int) error
+}
+
+type flockLocker struct{}
+
+func (flockLocker) Lock(fd int) error   { return syscall.Flock(fd, syscall.LOCK_EX) }
+func (flockLocker) Unlock(fd int) error { return syscall.Flock(fd, syscall.LOCK_UN) }
+
+// DefaultLocker is the file locker used by Write. Replace in tests.
+var DefaultLocker Locker = flockLocker{}
 
 // Dir returns the queue storage directory.
 func Dir() string {
@@ -44,30 +68,105 @@ func entryPath(sessionID string) string {
 }
 
 // Write persists an entry to disk, keyed by session ID.
-// Newer events for the same session overwrite the previous entry.
+// It locks the file, reads the existing session, pushes the old current entry
+// into history (deduplicating consecutive same-event entries), and writes back.
 func Write(e *Entry) error {
 	if err := EnsureDir(); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(e, "", "  ")
+
+	path := entryPath(e.SessionID)
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		return err
 	}
+	defer f.Close()
+
+	if err := DefaultLocker.Lock(int(f.Fd())); err != nil {
+		return err
+	}
+	defer DefaultLocker.Unlock(int(f.Fd()))
+
+	var sf SessionFile
+	if data, err := io.ReadAll(f); err == nil && len(data) > 0 {
+		sf, _ = parseSessionFile(data)
+	}
+
+	// Push current to history, skipping if both event and message are identical.
+	if sf.Current != nil && (sf.Current.Event != e.Event || sf.Current.Message != e.Message) {
+		sf.History = append([]*Entry{sf.Current}, sf.History...)
+		if len(sf.History) > MaxHistory {
+			sf.History = sf.History[:MaxHistory]
+		}
+	}
+	sf.Current = e
+
+	out, err := json.MarshalIndent(sf, "", "  ")
+	if err != nil {
+		return err
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	if err := f.Truncate(0); err != nil {
+		return err
+	}
+	if _, err := f.Write(out); err != nil {
+		return err
+	}
+
 	Debugf("WRITE session=%s event=%s cwd=%s pid=%d wid=%s", e.SessionID, e.Event, e.CWD, e.PID, e.KittyWindowID)
-	return os.WriteFile(entryPath(e.SessionID), data, 0644)
+	return nil
 }
 
-// Read loads an entry from a file path.
+// Read loads the current entry from a session file.
+// Handles both new SessionFile format and legacy bare-entry format.
 func Read(fpath string) (*Entry, error) {
+	sf, err := ReadSession(fpath)
+	if err != nil {
+		return nil, err
+	}
+	return sf.Current, nil
+}
+
+// ReadSession loads a full SessionFile (current + history) from a file path.
+// Handles both new SessionFile format and legacy bare-entry format.
+func ReadSession(fpath string) (*SessionFile, error) {
 	data, err := os.ReadFile(fpath)
 	if err != nil {
 		return nil, err
 	}
-	var e Entry
-	if err := json.Unmarshal(data, &e); err != nil {
+	sf, err := parseSessionFile(data)
+	if err != nil {
 		return nil, err
 	}
-	return &e, nil
+	return &sf, nil
+}
+
+// ReadSessionByID loads a full SessionFile by session ID.
+func ReadSessionByID(sessionID string) (*SessionFile, error) {
+	return ReadSession(entryPath(sessionID))
+}
+
+// parseSessionFile unmarshals data into a SessionFile, handling backward
+// compatibility with legacy bare-entry JSON files.
+func parseSessionFile(data []byte) (SessionFile, error) {
+	var sf SessionFile
+	if err := json.Unmarshal(data, &sf); err != nil {
+		return SessionFile{}, err
+	}
+	if sf.Current != nil {
+		return sf, nil
+	}
+	// Legacy format: bare Entry at top level.
+	var e Entry
+	if err := json.Unmarshal(data, &e); err != nil {
+		return SessionFile{}, err
+	}
+	if e.SessionID != "" {
+		return SessionFile{Current: &e}, nil
+	}
+	return sf, nil
 }
 
 // List returns all entries in the queue directory.

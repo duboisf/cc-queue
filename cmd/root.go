@@ -81,6 +81,7 @@ func NewRootCmd(opts Options) *cobra.Command {
 		installCmd,
 		completionCmd,
 		versionCmd,
+		newEndCmd(opts),
 		newListFzfCmd(opts),
 		newPreviewCmd(),
 		newJumpInternalCmd(),

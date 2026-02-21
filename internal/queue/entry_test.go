@@ -1,8 +1,10 @@
 package queue
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -245,5 +247,193 @@ func TestSessionIDSanitization(t *testing.T) {
 	fpath := filepath.Join(Dir(), "a_b_c.json")
 	if _, err := os.Stat(fpath); err != nil {
 		t.Errorf("sanitized file not found: %v", err)
+	}
+}
+
+func TestWritePreservesHistory(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", tmp)
+
+	Write(&Entry{SessionID: "s1", Event: "permission_prompt", Timestamp: time.Now()})
+	Write(&Entry{SessionID: "s1", Event: "working", Timestamp: time.Now()})
+	Write(&Entry{SessionID: "s1", Event: "idle_prompt", Timestamp: time.Now()})
+
+	sf, err := ReadSessionByID("s1")
+	if err != nil {
+		t.Fatalf("ReadSessionByID: %v", err)
+	}
+	if sf.Current.Event != "idle_prompt" {
+		t.Errorf("Current.Event = %q, want %q", sf.Current.Event, "idle_prompt")
+	}
+	if len(sf.History) != 2 {
+		t.Fatalf("History length = %d, want 2", len(sf.History))
+	}
+	if sf.History[0].Event != "working" {
+		t.Errorf("History[0].Event = %q, want %q", sf.History[0].Event, "working")
+	}
+	if sf.History[1].Event != "permission_prompt" {
+		t.Errorf("History[1].Event = %q, want %q", sf.History[1].Event, "permission_prompt")
+	}
+}
+
+func TestWriteDedupsIdenticalEventAndMessage(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", tmp)
+
+	Write(&Entry{SessionID: "s1", Event: "permission_prompt", Timestamp: time.Now()})
+	Write(&Entry{SessionID: "s1", Event: "working", Timestamp: time.Now()})
+	// Second "working" with same (empty) message should be deduped.
+	Write(&Entry{SessionID: "s1", Event: "working", Timestamp: time.Now()})
+
+	sf, err := ReadSessionByID("s1")
+	if err != nil {
+		t.Fatalf("ReadSessionByID: %v", err)
+	}
+	if sf.Current.Event != "working" {
+		t.Errorf("Current.Event = %q, want %q", sf.Current.Event, "working")
+	}
+	if len(sf.History) != 1 {
+		t.Fatalf("History length = %d, want 1", len(sf.History))
+	}
+	if sf.History[0].Event != "permission_prompt" {
+		t.Errorf("History[0].Event = %q, want %q", sf.History[0].Event, "permission_prompt")
+	}
+}
+
+func TestWriteKeepsHistoryForSameEventDifferentMessage(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", tmp)
+
+	Write(&Entry{SessionID: "s1", Event: "permission_prompt", Message: "Allow read?", Timestamp: time.Now()})
+	Write(&Entry{SessionID: "s1", Event: "permission_prompt", Message: "Allow write?", Timestamp: time.Now()})
+	Write(&Entry{SessionID: "s1", Event: "permission_prompt", Message: "Allow bash?", Timestamp: time.Now()})
+
+	sf, err := ReadSessionByID("s1")
+	if err != nil {
+		t.Fatalf("ReadSessionByID: %v", err)
+	}
+	if sf.Current.Message != "Allow bash?" {
+		t.Errorf("Current.Message = %q, want %q", sf.Current.Message, "Allow bash?")
+	}
+	// All three are permission_prompt but with different messages — both should be in history.
+	if len(sf.History) != 2 {
+		t.Fatalf("History length = %d, want 2", len(sf.History))
+	}
+	if sf.History[0].Message != "Allow write?" {
+		t.Errorf("History[0].Message = %q, want %q", sf.History[0].Message, "Allow write?")
+	}
+	if sf.History[1].Message != "Allow read?" {
+		t.Errorf("History[1].Message = %q, want %q", sf.History[1].Message, "Allow read?")
+	}
+}
+
+func TestWriteRespectsMaxHistory(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", tmp)
+
+	// Write MaxHistory+2 entries with alternating events to avoid dedup.
+	events := []string{"permission_prompt", "working"}
+	for i := 0; i < MaxHistory+2; i++ {
+		Write(&Entry{
+			SessionID: "s1",
+			Event:     events[i%2],
+			Timestamp: time.Now(),
+			Message:   time.Now().String(),
+		})
+	}
+
+	sf, err := ReadSessionByID("s1")
+	if err != nil {
+		t.Fatalf("ReadSessionByID: %v", err)
+	}
+	if len(sf.History) != MaxHistory {
+		t.Errorf("History length = %d, want %d", len(sf.History), MaxHistory)
+	}
+}
+
+func TestReadBackwardCompatLegacyFormat(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", tmp)
+	EnsureDir()
+
+	// Write a legacy bare-entry JSON file (old format).
+	legacy := Entry{
+		SessionID: "legacy-sess",
+		Event:     "idle_prompt",
+		Timestamp: time.Now(),
+		CWD:       "/tmp/proj",
+	}
+	data, _ := json.MarshalIndent(legacy, "", "  ")
+	fpath := filepath.Join(Dir(), "legacy-sess.json")
+	os.WriteFile(fpath, data, 0644)
+
+	// Read should return the entry.
+	e, err := Read(fpath)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if e.SessionID != "legacy-sess" {
+		t.Errorf("SessionID = %q, want %q", e.SessionID, "legacy-sess")
+	}
+
+	// ReadSession should wrap it in a SessionFile.
+	sf, err := ReadSession(fpath)
+	if err != nil {
+		t.Fatalf("ReadSession: %v", err)
+	}
+	if sf.Current == nil {
+		t.Fatal("Current is nil")
+	}
+	if len(sf.History) != 0 {
+		t.Errorf("History length = %d, want 0", len(sf.History))
+	}
+}
+
+func TestReadSessionByID(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", tmp)
+
+	Write(&Entry{SessionID: "lookup", Event: "idle_prompt", Timestamp: time.Now()})
+
+	sf, err := ReadSessionByID("lookup")
+	if err != nil {
+		t.Fatalf("ReadSessionByID: %v", err)
+	}
+	if sf.Current.SessionID != "lookup" {
+		t.Errorf("SessionID = %q, want %q", sf.Current.SessionID, "lookup")
+	}
+}
+
+func TestConcurrentWritesDontLoseHistory(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", tmp)
+
+	// Seed an initial entry.
+	Write(&Entry{SessionID: "conc", Event: "SessionStart", Timestamp: time.Now()})
+
+	// Write concurrently with real flock (DefaultLocker is flockLocker).
+	const goroutines = 10
+	var wg sync.WaitGroup
+	events := []string{"permission_prompt", "working"}
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			Write(&Entry{
+				SessionID: "conc",
+				Event:     events[n%2],
+				Timestamp: time.Now(),
+			})
+		}(i)
+	}
+	wg.Wait()
+
+	// File should still be valid JSON with a current entry.
+	sf, err := ReadSessionByID("conc")
+	if err != nil {
+		t.Fatalf("ReadSessionByID after concurrent writes: %v", err)
+	}
+	if sf.Current == nil {
+		t.Fatal("Current is nil after concurrent writes")
 	}
 }

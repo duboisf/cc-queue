@@ -2,10 +2,12 @@ package cmd_test
 
 import (
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/duboisf/cc-queue/cmd"
+	"github.com/duboisf/cc-queue/internal/queue"
 )
 
 func TestList_Empty(t *testing.T) {
@@ -206,6 +208,72 @@ func TestPreview_WorkingEntry(t *testing.T) {
 
 	if !strings.Contains(stdout, "WORK") {
 		t.Errorf("output missing WORK label:\n%s", stdout)
+	}
+}
+
+func TestPreview_ShowsHistory(t *testing.T) {
+	setupQueueDir(t)
+	opts, _, _ := testOptions()
+
+	seedEntryWithHistory(t, "sess-hist", "/home/user/proj",
+		[]string{"SessionStart", "permission_prompt", "working", "idle_prompt"}, 1001)
+
+	root := cmd.NewRootCmd(opts)
+	stdout, _, err := executeCommand(root, "_preview", "sess-hist")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(stdout, "IDLE") {
+		t.Errorf("output missing current IDLE label:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "Recent activity") {
+		t.Errorf("output missing history separator:\n%s", stdout)
+	}
+	// History should contain the previous events.
+	if !strings.Contains(stdout, "WORK") {
+		t.Errorf("output missing WORK in history:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "PERM") {
+		t.Errorf("output missing PERM in history:\n%s", stdout)
+	}
+}
+
+func TestPreview_EmptyHistory(t *testing.T) {
+	setupQueueDir(t)
+	opts, _, _ := testOptions()
+
+	seedEntry(t, "sess-nohist", "/home/user/proj", "permission_prompt", 1001)
+
+	root := cmd.NewRootCmd(opts)
+	stdout, _, err := executeCommand(root, "_preview", "sess-nohist")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if strings.Contains(stdout, "Recent activity") {
+		t.Errorf("should not show history separator with no history:\n%s", stdout)
+	}
+}
+
+func TestPreview_LegacyFormatFile(t *testing.T) {
+	setupQueueDir(t)
+	opts, _, _ := testOptions()
+
+	// Write a legacy bare-entry file directly.
+	queue.EnsureDir()
+	legacyJSON := `{"session_id":"legacy","event":"idle_prompt","timestamp":"2026-02-18T14:30:00Z","kitty_window_id":"42","cwd":"/tmp/proj","pid":1001}`
+	fpath := queue.Dir() + "/legacy.json"
+	os.WriteFile(fpath, []byte(legacyJSON), 0644)
+
+	root := cmd.NewRootCmd(opts)
+	stdout, _, err := executeCommand(root, "_preview", "legacy")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(stdout, "IDLE") {
+		t.Errorf("output missing IDLE label for legacy file:\n%s", stdout)
 	}
 }
 

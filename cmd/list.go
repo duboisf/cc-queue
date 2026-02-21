@@ -84,21 +84,33 @@ func newPreviewCmd() *cobra.Command {
 		Hidden: true,
 		Args:   cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			sessionID := args[0]
-			entries, err := queue.List()
-			if err != nil {
+			sf, err := queue.ReadSessionByID(args[0])
+			if err != nil || sf.Current == nil {
 				return
 			}
-			for _, e := range entries {
-				if e.SessionID == sessionID {
-					fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s\n\n",
-						queue.EventLabel(e.Event),
-						queue.FormatAge(e.Timestamp),
-						queue.ShortenPath(e.CWD))
-					if e.Message != "" {
-						fmt.Fprintln(cmd.OutOrStdout(), e.Message)
+
+			w := cmd.OutOrStdout()
+			e := sf.Current
+			fmt.Fprintf(w, "%s  %s  %s\n\n",
+				queue.EventLabel(e.Event),
+				queue.FormatAge(e.Timestamp),
+				queue.ShortenPath(e.CWD))
+			if e.Message != "" {
+				fmt.Fprintln(w, e.Message)
+			}
+
+			if len(sf.History) > 0 {
+				fmt.Fprintln(w)
+				fmt.Fprintln(w, "\u2500\u2500 Recent activity \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
+				for _, h := range sf.History {
+					msg := h.Message
+					if len(msg) > 60 {
+						msg = msg[:57] + "..."
 					}
-					return
+					fmt.Fprintf(w, "%5s  %-5s  %s\n",
+						queue.FormatAge(h.Timestamp),
+						queue.EventLabel(h.Event),
+						msg)
 				}
 			}
 		},

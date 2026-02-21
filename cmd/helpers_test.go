@@ -124,6 +124,25 @@ func executeCommand(root *cobra.Command, args ...string) (stdout, stderr string,
 	return outBuf.String(), errBuf.String(), err
 }
 
+// seedEntryWithHistory writes multiple entries for the same session to build history.
+func seedEntryWithHistory(t *testing.T, sessionID, cwd string, events []string, pid int) {
+	t.Helper()
+	for _, event := range events {
+		err := queue.Write(&queue.Entry{
+			Timestamp:     time.Now(),
+			SessionID:     sessionID,
+			KittyWindowID: "42",
+			PID:           pid,
+			CWD:           cwd,
+			Event:         event,
+			Message:       "msg for " + event,
+		})
+		if err != nil {
+			t.Fatalf("seedEntryWithHistory: %v", err)
+		}
+	}
+}
+
 // entryCount returns the number of entries in the queue.
 func entryCount(t *testing.T) int {
 	t.Helper()

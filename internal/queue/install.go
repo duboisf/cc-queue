@@ -12,6 +12,7 @@ import (
 const (
 	pushCommand         = "cc-queue push"
 	popCommand          = "cc-queue pop"
+	endCommand          = "cc-queue end"
 	notificationMatcher = "permission_prompt|idle_prompt|elicitation_dialog"
 )
 
@@ -60,6 +61,8 @@ func InstallHooks(target SettingsTarget) error {
 
 	addNotificationHook(hooks)
 	addUserPromptSubmitHook(hooks)
+	addSessionStartHook(hooks)
+	addSessionEndHook(hooks)
 
 	settings["hooks"] = hooks
 	return writeSettings(path, settings)
@@ -157,6 +160,48 @@ func addUserPromptSubmitHook(hooks map[string]any) {
 			map[string]any{
 				"type":    "command",
 				"command": popCommand,
+			},
+		},
+	}
+	hooks[eventKey] = append(matchers, entry)
+}
+
+// addSessionStartHook adds the push hook for SessionStart events.
+func addSessionStartHook(hooks map[string]any) {
+	eventKey := "SessionStart"
+	matchers := getOrCreateArray(hooks, eventKey)
+
+	if hasHookCommand(matchers, pushCommand) {
+		return
+	}
+
+	entry := map[string]any{
+		"matcher": "",
+		"hooks": []any{
+			map[string]any{
+				"type":    "command",
+				"command": pushCommand,
+			},
+		},
+	}
+	hooks[eventKey] = append(matchers, entry)
+}
+
+// addSessionEndHook adds the end hook for SessionEnd events.
+func addSessionEndHook(hooks map[string]any) {
+	eventKey := "SessionEnd"
+	matchers := getOrCreateArray(hooks, eventKey)
+
+	if hasHookCommand(matchers, endCommand) {
+		return
+	}
+
+	entry := map[string]any{
+		"matcher": "",
+		"hooks": []any{
+			map[string]any{
+				"type":    "command",
+				"command": endCommand,
 			},
 		},
 	}

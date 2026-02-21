@@ -37,6 +37,8 @@ func TestEventLabel(t *testing.T) {
 		{"elicitation_dialog", "ASK"},
 		{"idle_prompt", "IDLE"},
 		{"working", "WORK"},
+		{"SessionStart", "START"},
+		{"SessionEnd", "END"},
 		{"unknown_thing", "UNKNOWN_THING"},
 	}
 	for _, tt := range tests {
@@ -58,6 +60,8 @@ func TestNeedsAttention(t *testing.T) {
 		{"elicitation_dialog", true},
 		{"idle_prompt", true},
 		{"working", false},
+		{"SessionStart", false},
+		{"SessionEnd", false},
 		{"", false},
 	}
 	for _, tt := range tests {

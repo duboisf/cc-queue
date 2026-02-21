@@ -184,6 +184,46 @@ func TestInstallHooks_NoDuplicateWhenCommandPrefixed(t *testing.T) {
 	}
 }
 
+func TestInstallHooks_SessionStartAndEndHooks(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+
+	if err := InstallHooks(TargetUser); err != nil {
+		t.Fatalf("InstallHooks: %v", err)
+	}
+
+	path := filepath.Join(tmp, ".claude", "settings.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	var settings map[string]any
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	hooks := settings["hooks"].(map[string]any)
+
+	// SessionStart should have the push command.
+	ss, ok := hooks["SessionStart"].([]any)
+	if !ok || len(ss) == 0 {
+		t.Fatal("SessionStart hooks missing")
+	}
+	if !hasHookCommand(ss, pushCommand) {
+		t.Error("push hook not found in SessionStart")
+	}
+
+	// SessionEnd should have the end command.
+	se, ok := hooks["SessionEnd"].([]any)
+	if !ok || len(se) == 0 {
+		t.Fatal("SessionEnd hooks missing")
+	}
+	if !hasHookCommand(se, endCommand) {
+		t.Error("end hook not found in SessionEnd")
+	}
+}
+
 func TestInstallHooks_ProjectTarget(t *testing.T) {
 	tmp := t.TempDir()
 	// Change to temp dir to test project-level install.
