@@ -170,6 +170,9 @@ func parseSessionFile(data []byte) (SessionFile, error) {
 }
 
 // List returns all entries in the queue directory.
+// When multiple entries share the same (kitty_window_id, cwd) tuple,
+// only the most recent one is kept and the older duplicates are removed from disk.
+// Entries with an empty kitty_window_id are never deduplicated.
 func List() ([]*Entry, error) {
 	files, err := filepath.Glob(filepath.Join(Dir(), "*.json"))
 	if err != nil {
@@ -183,7 +186,37 @@ func List() ([]*Entry, error) {
 		}
 		entries = append(entries, e)
 	}
-	return entries, nil
+
+	// Deduplicate by (kitty_window_id, cwd). Entries with empty window ID are kept as-is.
+	type dedupKey struct{ wid, cwd string }
+	best := make(map[dedupKey]*Entry)
+	for _, e := range entries {
+		if e.KittyWindowID == "" {
+			continue
+		}
+		k := dedupKey{e.KittyWindowID, e.CWD}
+		if prev, ok := best[k]; !ok || e.Timestamp.After(prev.Timestamp) {
+			best[k] = e
+		}
+	}
+
+	// Build the final list, removing older duplicates from disk.
+	var result []*Entry
+	for _, e := range entries {
+		if e.KittyWindowID == "" {
+			result = append(result, e)
+			continue
+		}
+		k := dedupKey{e.KittyWindowID, e.CWD}
+		if best[k] == e {
+			result = append(result, e)
+		} else {
+			Debugf("DEDUP removing session=%s (superseded by session=%s for wid=%s cwd=%s)",
+				e.SessionID, best[k].SessionID, e.KittyWindowID, e.CWD)
+			Remove(e.SessionID)
+		}
+	}
+	return result, nil
 }
 
 // Remove deletes the entry for a given session ID.

@@ -26,6 +26,7 @@ cc-queue <command> <TAB>
 
 ## Testing
 
+- **TDD**: Write failing tests first, verify they fail, then implement the fix. Red → Green → Refactor.
 - Every command must have corresponding tests.
 - Use dependency injection via `Options` struct for testability.
 - All tests must run with `-race` flag.

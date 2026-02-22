@@ -13,9 +13,9 @@ func TestClean_RemovesStale(t *testing.T) {
 	root := cmd.NewRootCmd(opts)
 
 	// Alive process (current PID)
-	seedEntry(t, "alive", "/tmp", "Notification", os.Getpid())
+	seedEntry(t, "alive", "/tmp/alive", "Notification", os.Getpid())
 	// Dead process (PID that should not exist)
-	seedEntry(t, "dead", "/tmp", "Notification", 999999999)
+	seedEntry(t, "dead", "/tmp/dead", "Notification", 999999999)
 
 	_, _, err := executeCommand(root, "clean")
 	if err != nil {

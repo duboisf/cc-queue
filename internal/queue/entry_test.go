@@ -404,6 +404,128 @@ func TestReadSessionByID(t *testing.T) {
 	}
 }
 
+func TestListDeduplicatesByWindowAndCWD(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", tmp)
+
+	now := time.Now()
+
+	// Two entries with different session IDs but same kitty_window_id + cwd.
+	// This simulates Claude Code regenerating a session ID for the same project/window.
+	older := &Entry{
+		SessionID:     "session-old",
+		KittyWindowID: "42",
+		CWD:           "/home/fred/git/project",
+		Event:         "permission_prompt",
+		Timestamp:     now.Add(-10 * time.Minute),
+		PID:           os.Getpid(),
+	}
+	newer := &Entry{
+		SessionID:     "session-new",
+		KittyWindowID: "42",
+		CWD:           "/home/fred/git/project",
+		Event:         "idle_prompt",
+		Timestamp:     now,
+		PID:           os.Getpid(),
+	}
+
+	if err := Write(older); err != nil {
+		t.Fatalf("Write(older): %v", err)
+	}
+	if err := Write(newer); err != nil {
+		t.Fatalf("Write(newer): %v", err)
+	}
+
+	entries, err := List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+
+	// Should return only 1 entry (the most recent one), not 2.
+	if len(entries) != 1 {
+		t.Errorf("List() returned %d entries, want 1 (deduped by window_id+cwd)", len(entries))
+	}
+	if len(entries) == 1 && entries[0].SessionID != "session-new" {
+		t.Errorf("expected the newer session, got SessionID=%q", entries[0].SessionID)
+	}
+}
+
+func TestListDeduplicatesByWindowAndCWD_DifferentWindows(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", tmp)
+
+	now := time.Now()
+
+	// Two entries with the same CWD but different kitty_window_id.
+	// These should NOT be deduped -- they are genuinely different windows.
+	e1 := &Entry{
+		SessionID:     "sess-win10",
+		KittyWindowID: "10",
+		CWD:           "/home/fred/git/project",
+		Event:         "permission_prompt",
+		Timestamp:     now,
+		PID:           os.Getpid(),
+	}
+	e2 := &Entry{
+		SessionID:     "sess-win20",
+		KittyWindowID: "20",
+		CWD:           "/home/fred/git/project",
+		Event:         "idle_prompt",
+		Timestamp:     now,
+		PID:           os.Getpid(),
+	}
+
+	Write(e1)
+	Write(e2)
+
+	entries, err := List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+
+	if len(entries) != 2 {
+		t.Errorf("List() returned %d entries, want 2 (different window IDs should not be deduped)", len(entries))
+	}
+}
+
+func TestListDeduplicatesByWindowAndCWD_EmptyWindowID(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", tmp)
+
+	now := time.Now()
+
+	// Entries with empty kitty_window_id should all be kept (no dedup key).
+	e1 := &Entry{
+		SessionID:     "sess-no-wid-1",
+		KittyWindowID: "",
+		CWD:           "/home/fred/git/project",
+		Event:         "permission_prompt",
+		Timestamp:     now.Add(-5 * time.Minute),
+		PID:           os.Getpid(),
+	}
+	e2 := &Entry{
+		SessionID:     "sess-no-wid-2",
+		KittyWindowID: "",
+		CWD:           "/home/fred/git/project",
+		Event:         "idle_prompt",
+		Timestamp:     now,
+		PID:           os.Getpid(),
+	}
+
+	Write(e1)
+	Write(e2)
+
+	entries, err := List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+
+	// Both should be kept since we can't deduplicate without a window ID.
+	if len(entries) != 2 {
+		t.Errorf("List() returned %d entries, want 2 (empty window IDs should not be deduped)", len(entries))
+	}
+}
+
 func TestConcurrentWritesDontLoseHistory(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", tmp)
