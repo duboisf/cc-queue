@@ -85,6 +85,7 @@ func NewRootCmd(opts Options) *cobra.Command {
 		newListFzfCmd(opts),
 		newPreviewCmd(),
 		newJumpInternalCmd(),
+		newShellCmd(),
 	)
 	return root
 }

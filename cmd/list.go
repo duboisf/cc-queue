@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const defaultHeader = "cc-queue — Active Claude Code sessions (auto-refreshes)"
+const defaultHeader = "cc-queue — enter=jump  ctrl-i=shell  (auto-refreshes)"
 
 // entryRow holds precomputed display values for a queue entry.
 type entryRow struct {
@@ -254,6 +254,7 @@ func jumpRunE(opts Options) func(*cobra.Command, []string) error {
 		reloadCmd := self + " _list-fzf"
 		previewCmd := self + " _preview {1}"
 		jumpCmd := self + " _jump {1}"
+		shellCmd := self + " _shell {1}"
 
 		fzf := exec.Command("fzf",
 			"--height=50%",
@@ -269,6 +270,7 @@ func jumpRunE(opts Options) func(*cobra.Command, []string) error {
 			"--preview-window=down,wrap,40%",
 			"--bind=load:change-header("+defaultHeader+")+reload(sleep 2; "+reloadCmd+")",
 			"--bind=enter:transform("+jumpCmd+" >/dev/null 2>&1 && echo abort || echo \"change-header(⚠ Kitty window closed — entry removed)\")",
+			"--bind=ctrl-i:transform("+shellCmd+" >/dev/null 2>&1 && echo abort || echo \"change-header(⚠ Shell launch failed)\")",
 		)
 		fzf.Stdin = strings.NewReader(fzfLines())
 		fzf.Stderr = opts.Stderr
