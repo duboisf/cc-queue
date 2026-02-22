@@ -13,6 +13,39 @@ import (
 
 const defaultHeader = "cc-queue — Active Claude Code sessions (auto-refreshes)"
 
+// entryRow holds precomputed display values for a queue entry.
+type entryRow struct {
+	sessionID string
+	age       string
+	event     string
+	path      string
+	branch    string
+}
+
+// buildRows precomputes display values and the max path width for alignment.
+func buildRows(entries []*queue.Entry) ([]entryRow, int) {
+	rows := make([]entryRow, len(entries))
+	maxPath := len("PATH") // minimum width = header label
+	for i, e := range entries {
+		p := queue.ShortenPath(e.CWD)
+		if len(p) > maxPath {
+			maxPath = len(p)
+		}
+		branch := queue.GitBranch(e.CWD)
+		if branch == "" {
+			branch = "-"
+		}
+		rows[i] = entryRow{
+			sessionID: e.SessionID,
+			age:       queue.FormatAge(e.Timestamp),
+			event:     queue.EventLabel(e.Event),
+			path:      p,
+			branch:    branch,
+		}
+	}
+	return rows, maxPath
+}
+
 func newListCmd(opts Options) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
@@ -32,12 +65,11 @@ func newListCmd(opts Options) *cobra.Command {
 			}
 
 			sortForPicker(entries)
-			for _, e := range entries {
-				fmt.Fprintf(opts.Stdout, "%-5s %-4s  %s\n",
-					queue.FormatAge(e.Timestamp),
-					queue.EventLabel(e.Event),
-					queue.ShortenPath(e.CWD),
-				)
+			rows, maxPath := buildRows(entries)
+			fmt.Fprintf(opts.Stdout, "%-5s %-5s  %-*s  %s\n", "AGE", "EVENT", maxPath, "PATH", "BRANCH")
+			for _, r := range rows {
+				fmt.Fprintf(opts.Stdout, "%-5s %-5s  %-*s  %s\n",
+					r.age, r.event, maxPath, r.path, r.branch)
 			}
 			return nil
 		},
@@ -45,21 +77,20 @@ func newListCmd(opts Options) *cobra.Command {
 }
 
 // fzfLines outputs fzf-formatted lines for all queue entries.
-// Format: session_id\tage label  path
+// The first line is a column header (pinned via --header-lines=1).
+// Format: _\theader / session_id\tage event  path  branch
 func fzfLines() string {
 	entries, err := queue.List()
 	if err != nil || len(entries) == 0 {
 		return ""
 	}
 	sortForPicker(entries)
+	rows, maxPath := buildRows(entries)
 	var b strings.Builder
-	for _, e := range entries {
-		fmt.Fprintf(&b, "%s\t%-5s %-4s  %s\n",
-			e.SessionID,
-			queue.FormatAge(e.Timestamp),
-			queue.EventLabel(e.Event),
-			queue.ShortenPath(e.CWD),
-		)
+	fmt.Fprintf(&b, "_\t%-5s %-5s  %-*s  %s\n", "AGE", "EVENT", maxPath, "PATH", "BRANCH")
+	for _, r := range rows {
+		fmt.Fprintf(&b, "%s\t%-5s %-5s  %-*s  %s\n",
+			r.sessionID, r.age, r.event, maxPath, r.path, r.branch)
 	}
 	return b.String()
 }
@@ -91,10 +122,19 @@ func newPreviewCmd() *cobra.Command {
 
 			w := cmd.OutOrStdout()
 			e := sf.Current
-			fmt.Fprintf(w, "%s  %s  %s\n\n",
-				queue.EventLabel(e.Event),
-				queue.FormatAge(e.Timestamp),
-				queue.ShortenPath(e.CWD))
+			branch := queue.GitBranch(e.CWD)
+			if branch != "" {
+				fmt.Fprintf(w, "%s  %s  %s  (%s)\n\n",
+					queue.EventLabel(e.Event),
+					queue.FormatAge(e.Timestamp),
+					queue.ShortenPath(e.CWD),
+					branch)
+			} else {
+				fmt.Fprintf(w, "%s  %s  %s\n\n",
+					queue.EventLabel(e.Event),
+					queue.FormatAge(e.Timestamp),
+					queue.ShortenPath(e.CWD))
+			}
 			if e.Message != "" {
 				fmt.Fprintln(w, e.Message)
 			}
@@ -223,6 +263,7 @@ func jumpRunE(opts Options) func(*cobra.Command, []string) error {
 			"--no-multi",
 			"--header-first",
 			"--header="+defaultHeader,
+			"--header-lines=1",
 			"--prompt=Jump to session> ",
 			"--preview="+previewCmd,
 			"--preview-window=down,wrap,40%",

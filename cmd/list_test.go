@@ -91,15 +91,19 @@ func TestList_AttentionFirstSorting(t *testing.T) {
 
 	got := stdout.String()
 	lines := strings.Split(strings.TrimRight(got, "\n"), "\n")
-	if len(lines) != 2 {
-		t.Fatalf("expected 2 lines, got %d: %q", len(lines), got)
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 lines (header + 2 entries), got %d: %q", len(lines), got)
+	}
+	// First line is the column header.
+	if !strings.Contains(lines[0], "AGE") {
+		t.Errorf("first line should be column header, got %q", lines[0])
 	}
 	// PERM should come before WORK (attention-first sorting)
-	if !strings.Contains(lines[0], "PERM") {
-		t.Errorf("first line should have PERM, got %q", lines[0])
+	if !strings.Contains(lines[1], "PERM") {
+		t.Errorf("second line should have PERM, got %q", lines[1])
 	}
-	if !strings.Contains(lines[1], "WORK") {
-		t.Errorf("second line should have WORK, got %q", lines[1])
+	if !strings.Contains(lines[2], "WORK") {
+		t.Errorf("third line should have WORK, got %q", lines[2])
 	}
 }
 
@@ -117,11 +121,16 @@ func TestList_OutputFormat(t *testing.T) {
 
 	got := stdout.String()
 	lines := strings.Split(strings.TrimRight(got, "\n"), "\n")
-	if len(lines) != 1 {
-		t.Fatalf("expected 1 line, got %d: %q", len(lines), got)
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines (header + 1 entry), got %d: %q", len(lines), got)
 	}
 
-	line := lines[0]
+	// First line is column header.
+	if !strings.Contains(lines[0], "AGE") || !strings.Contains(lines[0], "BRANCH") {
+		t.Errorf("header line missing expected columns: %q", lines[0])
+	}
+
+	line := lines[1]
 	if !strings.Contains(line, "PERM") {
 		t.Errorf("line missing PERM label: %q", line)
 	}
@@ -130,11 +139,16 @@ func TestList_OutputFormat(t *testing.T) {
 	}
 
 	parts := strings.Fields(line)
-	if len(parts) < 3 {
-		t.Fatalf("expected at least 3 fields, got %d: %q", len(parts), line)
+	// Format: AGE LABEL PATH BRANCH (4 fields)
+	if len(parts) < 4 {
+		t.Fatalf("expected at least 4 fields, got %d: %q", len(parts), line)
 	}
 	if parts[1] != "PERM" {
 		t.Errorf("second field = %q, want %q", parts[1], "PERM")
+	}
+	// Non-git dir should show "-" for branch.
+	if parts[3] != "-" {
+		t.Errorf("fourth field (branch) = %q, want %q", parts[3], "-")
 	}
 }
 
@@ -165,12 +179,34 @@ func TestListFzf_WithEntries(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Each line should be: session_id\tage label  path
+	// First line is the column header.
+	allLines := strings.Split(strings.TrimSpace(stdout), "\n")
+	if len(allLines) < 3 {
+		t.Fatalf("expected header + 2 data lines, got %d lines:\n%s", len(allLines), stdout)
+	}
+	if !strings.Contains(allLines[0], "AGE") {
+		t.Errorf("first line should be column header, got %q", allLines[0])
+	}
+
+	// Data lines should contain session IDs.
 	if !strings.Contains(stdout, "sess-fzf-1\t") {
 		t.Errorf("output missing sess-fzf-1 tab-delimited:\n%s", stdout)
 	}
 	if !strings.Contains(stdout, "sess-fzf-2\t") {
 		t.Errorf("output missing sess-fzf-2 tab-delimited:\n%s", stdout)
+	}
+
+	// Non-git CWDs should show "-" for branch (skip header line).
+	for _, line := range allLines[1:] {
+		parts := strings.SplitN(line, "\t", 2)
+		if len(parts) < 2 {
+			continue
+		}
+		fields := strings.Fields(parts[1])
+		last := fields[len(fields)-1]
+		if last != "-" {
+			t.Errorf("expected branch '-' for non-git dir, got %q in line: %s", last, line)
+		}
 	}
 }
 

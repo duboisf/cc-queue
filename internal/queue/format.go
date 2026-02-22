@@ -3,6 +3,7 @@ package queue
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 )
@@ -48,6 +49,16 @@ func NeedsAttention(event string) bool {
 	default:
 		return true
 	}
+}
+
+// GitBranch returns the current git branch for a directory, or "" if not a git repo.
+func GitBranch(cwd string) string {
+	cmd := exec.Command("git", "-C", cwd, "rev-parse", "--abbrev-ref", "HEAD")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // ShortenPath replaces $HOME prefix with ~.
