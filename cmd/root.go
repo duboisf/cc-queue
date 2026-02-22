@@ -105,15 +105,40 @@ func DefaultOptions() Options {
 		Stderr:     os.Stderr,
 		FullTabber: kitty.NewLayoutManager(),
 		CleanStaleWindowsFn: func() {
-			out, err := exec.Command("kitty", "@", "ls").Output()
+			entries, err := queue.List()
 			if err != nil {
 				return
 			}
-			ids, err := kitty.ParseWindowIDs(out)
-			if err != nil {
+			// Collect unique kitty sockets from queue entries.
+			sockets := make(map[string]bool)
+			for _, e := range entries {
+				if e.KittyListenOn != "" {
+					sockets[e.KittyListenOn] = true
+				}
+			}
+			if len(sockets) == 0 {
 				return
 			}
-			queue.CleanStaleWindows(ids)
+			// Query each socket for its window IDs.
+			allIDs := make(map[string]bool)
+			queried := false
+			for sock := range sockets {
+				out, err := exec.Command("kitty", "@", "--to", sock, "ls").Output()
+				if err != nil {
+					continue
+				}
+				ids, err := kitty.ParseWindowIDs(out)
+				if err != nil {
+					continue
+				}
+				queried = true
+				for id := range ids {
+					allIDs[id] = true
+				}
+			}
+			if queried {
+				queue.CleanStaleWindows(allIDs)
+			}
 		},
 	}
 }
