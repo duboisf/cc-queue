@@ -526,6 +526,71 @@ func TestListDeduplicatesByWindowAndCWD_EmptyWindowID(t *testing.T) {
 	}
 }
 
+func TestTouch(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", tmp)
+
+	original := time.Date(2026, 2, 18, 10, 0, 0, 0, time.UTC)
+	Write(&Entry{SessionID: "s1", Event: "permission_prompt", Message: "Allow?", Timestamp: original})
+
+	updated := time.Date(2026, 2, 18, 12, 0, 0, 0, time.UTC)
+	if err := Touch("s1", updated); err != nil {
+		t.Fatalf("Touch: %v", err)
+	}
+
+	sf, err := ReadSessionByID("s1")
+	if err != nil {
+		t.Fatalf("ReadSessionByID: %v", err)
+	}
+	if !sf.Current.Timestamp.Equal(updated) {
+		t.Errorf("Timestamp = %v, want %v", sf.Current.Timestamp, updated)
+	}
+	if sf.Current.Event != "permission_prompt" {
+		t.Errorf("Event = %q, want %q", sf.Current.Event, "permission_prompt")
+	}
+	if sf.Current.Message != "Allow?" {
+		t.Errorf("Message = %q, want %q", sf.Current.Message, "Allow?")
+	}
+}
+
+func TestTouchPreservesHistory(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", tmp)
+
+	Write(&Entry{SessionID: "s1", Event: "permission_prompt", Timestamp: time.Now()})
+	Write(&Entry{SessionID: "s1", Event: "working", Timestamp: time.Now()})
+	Write(&Entry{SessionID: "s1", Event: "idle_prompt", Timestamp: time.Now()})
+
+	updated := time.Date(2026, 2, 22, 15, 0, 0, 0, time.UTC)
+	if err := Touch("s1", updated); err != nil {
+		t.Fatalf("Touch: %v", err)
+	}
+
+	sf, err := ReadSessionByID("s1")
+	if err != nil {
+		t.Fatalf("ReadSessionByID: %v", err)
+	}
+	if len(sf.History) != 2 {
+		t.Fatalf("History length = %d, want 2", len(sf.History))
+	}
+	if sf.History[0].Event != "working" {
+		t.Errorf("History[0].Event = %q, want %q", sf.History[0].Event, "working")
+	}
+	if sf.History[1].Event != "permission_prompt" {
+		t.Errorf("History[1].Event = %q, want %q", sf.History[1].Event, "permission_prompt")
+	}
+}
+
+func TestTouchNonexistent(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", tmp)
+
+	err := Touch("nonexistent", time.Now())
+	if err == nil {
+		t.Error("expected error for nonexistent session")
+	}
+}
+
 func TestConcurrentWritesDontLoseHistory(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", tmp)

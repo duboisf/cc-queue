@@ -152,6 +152,34 @@ func TestList_OutputFormat(t *testing.T) {
 	}
 }
 
+func TestList_OldestFirstWithinGroup(t *testing.T) {
+	setupQueueDir(t)
+	opts, stdout, _ := testOptions()
+
+	// Seed two attention-needed entries: older and newer.
+	seedEntryAtTime(t, "sess-old", "/home/user/project-old", "permission_prompt", 1001, -60)
+	seedEntryAtTime(t, "sess-new", "/home/user/project-new", "idle_prompt", 1002, -5)
+
+	root := cmd.NewRootCmd(opts)
+	_, _, err := executeCommand(root, "list")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := stdout.String()
+	lines := strings.Split(strings.TrimRight(got, "\n"), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 lines (header + 2 entries), got %d: %q", len(lines), got)
+	}
+	// Oldest entry should be listed first (longest-waiting at top).
+	if !strings.Contains(lines[1], "project-old") {
+		t.Errorf("first entry should be oldest (project-old), got %q", lines[1])
+	}
+	if !strings.Contains(lines[2], "project-new") {
+		t.Errorf("second entry should be newest (project-new), got %q", lines[2])
+	}
+}
+
 func TestListFzf_Empty(t *testing.T) {
 	setupQueueDir(t)
 	opts, _, _ := testOptions()

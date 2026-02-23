@@ -119,6 +119,50 @@ func Write(e *Entry) error {
 	return nil
 }
 
+// Touch atomically updates the timestamp of an existing session entry
+// without modifying event, message, or history.
+func Touch(sessionID string, now time.Time) error {
+	path := entryPath(sessionID)
+	f, err := os.OpenFile(path, os.O_RDWR, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	if err := DefaultLocker.Lock(int(f.Fd())); err != nil {
+		return err
+	}
+	defer DefaultLocker.Unlock(int(f.Fd()))
+
+	data, err := io.ReadAll(f)
+	if err != nil || len(data) == 0 {
+		return err
+	}
+	sf, err := parseSessionFile(data)
+	if err != nil || sf.Current == nil {
+		return err
+	}
+
+	sf.Current.Timestamp = now
+
+	out, err := json.MarshalIndent(sf, "", "  ")
+	if err != nil {
+		return err
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	if err := f.Truncate(0); err != nil {
+		return err
+	}
+	if _, err := f.Write(out); err != nil {
+		return err
+	}
+
+	Debugf("TOUCH session=%s timestamp=%s", sessionID, now.Format(time.RFC3339))
+	return nil
+}
+
 // Read loads the current entry from a session file.
 // Handles both new SessionFile format and legacy bare-entry format.
 func Read(fpath string) (*Entry, error) {

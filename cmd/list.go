@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/duboisf/cc-queue/internal/queue"
 	"github.com/spf13/cobra"
@@ -173,6 +174,7 @@ func jumpToEntry(entry *queue.Entry) error {
 		queue.Remove(entry.SessionID)
 		return fmt.Errorf("kitty focus-window failed: %w\n%s", err, strings.TrimSpace(string(out)))
 	}
+	queue.Touch(entry.SessionID, time.Now())
 	return nil
 }
 
@@ -212,6 +214,7 @@ func newJumpInternalCmd() *cobra.Command {
 				queue.Remove(target.SessionID)
 				return fmt.Errorf("window no longer exists: %s", strings.TrimSpace(string(out)))
 			}
+			queue.Touch(target.SessionID, time.Now())
 			return nil
 		},
 	}
@@ -280,7 +283,9 @@ func jumpRunE(opts Options) func(*cobra.Command, []string) error {
 	}
 }
 
-// sortForPicker sorts entries with attention-needed sessions first, then by newest.
+// sortForPicker sorts entries with attention-needed sessions first, then by oldest
+// (longest-waiting at top). This way, jumping to a session and touching its
+// timestamp pushes it to the bottom of the list.
 func sortForPicker(entries []*queue.Entry) {
 	sort.SliceStable(entries, func(i, j int) bool {
 		ai := queue.NeedsAttention(entries[i].Event)
@@ -288,6 +293,6 @@ func sortForPicker(entries []*queue.Entry) {
 		if ai != aj {
 			return ai
 		}
-		return entries[i].Timestamp.After(entries[j].Timestamp)
+		return entries[i].Timestamp.Before(entries[j].Timestamp)
 	})
 }
