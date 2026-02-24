@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/duboisf/cc-queue/internal/queue"
@@ -73,7 +74,7 @@ func newInstallCmd(opts Options) *cobra.Command {
 				fmt.Fprintf(opts.Stdout, "Added 'include cc-queue.conf' to %s\n", result.MainConf)
 			}
 
-			if desktop {
+			if desktop || runtime.GOOS == "linux" {
 				shell := os.Getenv("SHELL")
 				dr, err := queue.InstallDesktopEntry(shell, force)
 				if err != nil {
@@ -100,7 +101,7 @@ func newInstallCmd(opts Options) *cobra.Command {
 	_ = cmd.RegisterFlagCompletionFunc("force", cobra.NoFileCompletions)
 	_ = cmd.RegisterFlagCompletionFunc("picker-shortcut", cobra.NoFileCompletions)
 	_ = cmd.RegisterFlagCompletionFunc("first-shortcut", cobra.NoFileCompletions)
-	cmd.Flags().BoolVar(&desktop, "desktop", false, "Create .desktop entry for GNOME app launcher")
+	cmd.Flags().BoolVar(&desktop, "desktop", false, "Create .desktop entry for XDG app launcher (automatic on Linux)")
 	_ = cmd.RegisterFlagCompletionFunc("desktop", cobra.NoFileCompletions)
 
 	return cmd

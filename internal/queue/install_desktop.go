@@ -7,6 +7,19 @@ import (
 	"strings"
 )
 
+// shellFlags returns the appropriate flags for launching an interactive shell.
+// zsh needs -ilc (login + interactive) because mise/tool managers activate in
+// .zshrc which is only sourced for interactive shells, and some PATH setup
+// only happens in login profiles. Other shells use -ic to avoid issues with
+// login mode guards in .bash_profile etc.
+func shellFlags(shell string) string {
+	base := filepath.Base(shell)
+	if base == "zsh" {
+		return "-ilc"
+	}
+	return "-ic"
+}
+
 // DesktopInstallResult describes what was written during desktop entry installation.
 type DesktopInstallResult struct {
 	Path    string // path to cc-queue.desktop
@@ -25,7 +38,7 @@ func BuildDesktopEntry(shell string) string {
 	b.WriteString("[Desktop Entry]\n")
 	b.WriteString("Name=cc-queue\n")
 	b.WriteString("Comment=Claude Code input queue for kitty\n")
-	fmt.Fprintf(&b, "Exec=kitty --detach --title cc-queue -- %s -ilc 'exec cc-queue'\n", shell)
+	fmt.Fprintf(&b, "Exec=kitty --detach --title cc-queue -- %s %s 'exec cc-queue'\n", shell, shellFlags(shell))
 	b.WriteString("Type=Application\n")
 	b.WriteString("Terminal=false\n")
 	b.WriteString("Categories=Development;\n")

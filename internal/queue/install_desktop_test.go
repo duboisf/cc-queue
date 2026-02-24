@@ -28,12 +28,24 @@ func TestBuildDesktopEntry_WithShell(t *testing.T) {
 	}
 }
 
+func TestBuildDesktopEntry_BashUsesIC(t *testing.T) {
+	got := BuildDesktopEntry("/bin/bash")
+
+	want := "Exec=kitty --detach --title cc-queue -- /bin/bash -ic 'exec cc-queue'"
+	if !strings.Contains(got, want) {
+		t.Errorf("bash should use -ic, not -ilc\ngot:\n%s", got)
+	}
+	if strings.Contains(got, "-ilc") {
+		t.Errorf("bash should not use -ilc\ngot:\n%s", got)
+	}
+}
+
 func TestBuildDesktopEntry_FallbackShell(t *testing.T) {
 	got := BuildDesktopEntry("")
 
-	want := "Exec=kitty --detach --title cc-queue -- /bin/sh -ilc 'exec cc-queue'"
+	want := "Exec=kitty --detach --title cc-queue -- /bin/sh -ic 'exec cc-queue'"
 	if !strings.Contains(got, want) {
-		t.Errorf("expected fallback to /bin/sh\ngot:\n%s", got)
+		t.Errorf("expected fallback to /bin/sh with -ic\ngot:\n%s", got)
 	}
 }
 

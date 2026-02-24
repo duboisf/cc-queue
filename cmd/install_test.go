@@ -3,6 +3,7 @@ package cmd_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -255,6 +256,34 @@ func TestInstall_DesktopEntry(t *testing.T) {
 	}
 	if !strings.Contains(string(content), "/bin/zsh") {
 		t.Error("desktop file missing shell")
+	}
+}
+
+func TestInstall_DesktopEntryAutoOnLinux(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("desktop auto-install only runs on Linux")
+	}
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("SHELL", "/bin/zsh")
+
+	opts, stdout, _ := testOptions()
+	root := cmd.NewRootCmd(opts)
+
+	// No --desktop flag — should auto-install on Linux.
+	_, _, err := executeCommand(root, "install")
+	if err != nil {
+		t.Fatalf("install returned error: %v", err)
+	}
+
+	got := stdout.String()
+	if !strings.Contains(got, "cc-queue.desktop") {
+		t.Errorf("expected desktop entry creation message on Linux:\n%s", got)
+	}
+
+	desktopPath := filepath.Join(tmpDir, ".local", "share", "applications", "cc-queue.desktop")
+	if _, err := os.Stat(desktopPath); os.IsNotExist(err) {
+		t.Error("desktop file not auto-created on Linux")
 	}
 }
 
