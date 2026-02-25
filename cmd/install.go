@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"runtime"
 	"strings"
 
 	"github.com/duboisf/cc-queue/internal/queue"
@@ -11,7 +10,7 @@ import (
 )
 
 func newInstallCmd(opts Options) *cobra.Command {
-	var user, project, force, desktop bool
+	var user, project, force bool
 	var pickerShortcut, firstShortcut string
 
 	cmd := &cobra.Command{
@@ -74,19 +73,6 @@ func newInstallCmd(opts Options) *cobra.Command {
 				fmt.Fprintf(opts.Stdout, "Added 'include cc-queue.conf' to %s\n", result.MainConf)
 			}
 
-			if desktop || runtime.GOOS == "linux" {
-				shell := os.Getenv("SHELL")
-				dr, err := queue.InstallDesktopEntry(shell, force)
-				if err != nil {
-					return err
-				}
-				if dr.Skipped {
-					fmt.Fprintf(opts.Stdout, "%s already exists, skipping (use --force to overwrite)\n", dr.Path)
-				} else {
-					fmt.Fprintf(opts.Stdout, "Created %s\n", dr.Path)
-				}
-			}
-
 			return nil
 		},
 	}
@@ -101,8 +87,6 @@ func newInstallCmd(opts Options) *cobra.Command {
 	_ = cmd.RegisterFlagCompletionFunc("force", cobra.NoFileCompletions)
 	_ = cmd.RegisterFlagCompletionFunc("picker-shortcut", cobra.NoFileCompletions)
 	_ = cmd.RegisterFlagCompletionFunc("first-shortcut", cobra.NoFileCompletions)
-	cmd.Flags().BoolVar(&desktop, "desktop", false, "Create .desktop entry for XDG app launcher (automatic on Linux)")
-	_ = cmd.RegisterFlagCompletionFunc("desktop", cobra.NoFileCompletions)
 
 	return cmd
 }

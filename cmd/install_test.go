@@ -3,7 +3,6 @@ package cmd_test
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -225,91 +224,6 @@ func TestInstall_ForceOverwritePreservesShortcuts(t *testing.T) {
 	}
 	if !strings.Contains(s, "kitty_mod+shift+u") {
 		t.Error("first shortcut lost during --force without flag")
-	}
-}
-
-func TestInstall_DesktopEntry(t *testing.T) {
-	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
-	t.Setenv("SHELL", "/bin/zsh")
-
-	opts, stdout, _ := testOptions()
-	root := cmd.NewRootCmd(opts)
-
-	_, _, err := executeCommand(root, "install", "--desktop")
-	if err != nil {
-		t.Fatalf("install --desktop returned error: %v", err)
-	}
-
-	got := stdout.String()
-	if !strings.Contains(got, "Created") || !strings.Contains(got, "cc-queue.desktop") {
-		t.Errorf("stdout missing desktop creation message:\n%s", got)
-	}
-
-	desktopPath := filepath.Join(tmpDir, ".local", "share", "applications", "cc-queue.desktop")
-	content, err := os.ReadFile(desktopPath)
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
-	}
-	if !strings.Contains(string(content), "Exec=kitty") {
-		t.Error("desktop file missing Exec line")
-	}
-	if !strings.Contains(string(content), "/bin/zsh") {
-		t.Error("desktop file missing shell")
-	}
-}
-
-func TestInstall_DesktopEntryAutoOnLinux(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("desktop auto-install only runs on Linux")
-	}
-	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
-	t.Setenv("SHELL", "/bin/zsh")
-
-	opts, stdout, _ := testOptions()
-	root := cmd.NewRootCmd(opts)
-
-	// No --desktop flag — should auto-install on Linux.
-	_, _, err := executeCommand(root, "install")
-	if err != nil {
-		t.Fatalf("install returned error: %v", err)
-	}
-
-	got := stdout.String()
-	if !strings.Contains(got, "cc-queue.desktop") {
-		t.Errorf("expected desktop entry creation message on Linux:\n%s", got)
-	}
-
-	desktopPath := filepath.Join(tmpDir, ".local", "share", "applications", "cc-queue.desktop")
-	if _, err := os.Stat(desktopPath); os.IsNotExist(err) {
-		t.Error("desktop file not auto-created on Linux")
-	}
-}
-
-func TestInstall_DesktopEntrySkipsWithoutForce(t *testing.T) {
-	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
-
-	// First install.
-	opts1, _, _ := testOptions()
-	root1 := cmd.NewRootCmd(opts1)
-	_, _, err := executeCommand(root1, "install", "--desktop")
-	if err != nil {
-		t.Fatalf("first install: %v", err)
-	}
-
-	// Second install without --force.
-	opts2, stdout2, _ := testOptions()
-	root2 := cmd.NewRootCmd(opts2)
-	_, _, err = executeCommand(root2, "install", "--desktop")
-	if err != nil {
-		t.Fatalf("second install: %v", err)
-	}
-
-	got := stdout2.String()
-	if !strings.Contains(got, "cc-queue.desktop already exists, skipping") {
-		t.Errorf("expected skip message, got:\n%s", got)
 	}
 }
 
