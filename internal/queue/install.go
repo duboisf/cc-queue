@@ -68,6 +68,83 @@ func InstallHooks(target SettingsTarget) error {
 	return writeSettings(path, settings)
 }
 
+// UninstallHooks removes all cc-queue hooks from a Claude Code settings file.
+// It removes only cc-queue entries, leaving other hooks intact.
+func UninstallHooks(target SettingsTarget) error {
+	path, err := SettingsPath(target)
+	if err != nil {
+		return err
+	}
+
+	settings, err := readSettings(path)
+	if err != nil {
+		return err
+	}
+
+	hooks, ok := settings["hooks"].(map[string]any)
+	if !ok {
+		return nil // no hooks section, nothing to do
+	}
+
+	removeHookCommand(hooks, "Notification", pushCommand)
+	removeHookCommand(hooks, "UserPromptSubmit", popCommand)
+	removeHookCommand(hooks, "SessionStart", pushCommand)
+	removeHookCommand(hooks, "SessionEnd", endCommand)
+
+	settings["hooks"] = hooks
+	return writeSettings(path, settings)
+}
+
+// removeHookCommand removes matcher entries containing a cc-queue command from
+// the given event key. If a matcher has other hooks besides the cc-queue one,
+// only the cc-queue hook is removed. Empty matcher entries are cleaned up.
+func removeHookCommand(hooks map[string]any, eventKey, command string) {
+	matchers, ok := hooks[eventKey].([]any)
+	if !ok {
+		return
+	}
+
+	var remaining []any
+	for _, m := range matchers {
+		matcher, ok := m.(map[string]any)
+		if !ok {
+			remaining = append(remaining, m)
+			continue
+		}
+		hooksList, ok := matcher["hooks"].([]any)
+		if !ok {
+			remaining = append(remaining, m)
+			continue
+		}
+
+		var filteredHooks []any
+		for _, h := range hooksList {
+			hook, ok := h.(map[string]any)
+			if !ok {
+				filteredHooks = append(filteredHooks, h)
+				continue
+			}
+			cmd, _ := hook["command"].(string)
+			if strings.Contains(cmd, command) {
+				continue // skip this cc-queue hook
+			}
+			filteredHooks = append(filteredHooks, h)
+		}
+
+		if len(filteredHooks) > 0 {
+			matcher["hooks"] = filteredHooks
+			remaining = append(remaining, matcher)
+		}
+		// If no hooks left in this matcher, drop the entire matcher entry.
+	}
+
+	if len(remaining) > 0 {
+		hooks[eventKey] = remaining
+	} else {
+		delete(hooks, eventKey)
+	}
+}
+
 func readSettings(path string) (map[string]any, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -109,7 +186,7 @@ func addNotificationHook(hooks map[string]any) {
 	eventKey := "Notification"
 	matchers := getOrCreateArray(hooks, eventKey)
 
-	if hasHookCommand(matchers, pushCommand) {
+	if HasHookCommand(matchers, pushCommand) {
 		return // already installed
 	}
 
@@ -130,7 +207,7 @@ func addUserPromptSubmitHook(hooks map[string]any) {
 	eventKey := "UserPromptSubmit"
 	matchers := getOrCreateArray(hooks, eventKey)
 
-	if hasHookCommand(matchers, popCommand) {
+	if HasHookCommand(matchers, popCommand) {
 		return // already installed
 	}
 
@@ -171,7 +248,7 @@ func addSessionStartHook(hooks map[string]any) {
 	eventKey := "SessionStart"
 	matchers := getOrCreateArray(hooks, eventKey)
 
-	if hasHookCommand(matchers, pushCommand) {
+	if HasHookCommand(matchers, pushCommand) {
 		return
 	}
 
@@ -192,7 +269,7 @@ func addSessionEndHook(hooks map[string]any) {
 	eventKey := "SessionEnd"
 	matchers := getOrCreateArray(hooks, eventKey)
 
-	if hasHookCommand(matchers, endCommand) {
+	if HasHookCommand(matchers, endCommand) {
 		return
 	}
 
@@ -350,10 +427,54 @@ func InstallKittyConfig(shortcuts KittyShortcuts, force bool) (*KittyInstallResu
 	}, nil
 }
 
-// hasHookCommand checks if any matcher entry already contains the given command.
+// HookStatus describes which cc-queue hooks are installed.
+type HookStatus struct {
+	Notification     bool
+	UserPromptSubmit bool
+	SessionStart     bool
+	SessionEnd       bool
+}
+
+// AllInstalled returns true if all four hooks are installed.
+func (s *HookStatus) AllInstalled() bool {
+	return s.Notification && s.UserPromptSubmit && s.SessionStart && s.SessionEnd
+}
+
+// AnyInstalled returns true if at least one hook is installed.
+func (s *HookStatus) AnyInstalled() bool {
+	return s.Notification || s.UserPromptSubmit || s.SessionStart || s.SessionEnd
+}
+
+// CheckHooks reads the settings file for the given target and checks which
+// cc-queue hooks are installed.
+func CheckHooks(target SettingsTarget) (*HookStatus, string, error) {
+	path, err := SettingsPath(target)
+	if err != nil {
+		return nil, "", err
+	}
+
+	settings, err := readSettings(path)
+	if err != nil {
+		return nil, path, err
+	}
+
+	hooks, _ := settings["hooks"].(map[string]any)
+	if hooks == nil {
+		return &HookStatus{}, path, nil
+	}
+
+	return &HookStatus{
+		Notification:     HasHookCommand(getOrCreateArray(hooks, "Notification"), pushCommand),
+		UserPromptSubmit: HasHookCommand(getOrCreateArray(hooks, "UserPromptSubmit"), popCommand),
+		SessionStart:     HasHookCommand(getOrCreateArray(hooks, "SessionStart"), pushCommand),
+		SessionEnd:       HasHookCommand(getOrCreateArray(hooks, "SessionEnd"), endCommand),
+	}, path, nil
+}
+
+// HasHookCommand checks if any matcher entry already contains the given command.
 // It uses a substring match so that prefixed variants like
 // "CC_QUEUE_DEBUG=1 cc-queue push" are recognized as already installed.
-func hasHookCommand(matchers []any, command string) bool {
+func HasHookCommand(matchers []any, command string) bool {
 	for _, m := range matchers {
 		matcher, ok := m.(map[string]any)
 		if !ok {

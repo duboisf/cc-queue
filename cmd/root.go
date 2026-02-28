@@ -64,6 +64,8 @@ func NewRootCmd(opts Options) *cobra.Command {
 
 	installCmd := newInstallCmd(opts)
 	installCmd.GroupID = "setup"
+	hooksCmd := newHooksCmd(opts)
+	hooksCmd.GroupID = "setup"
 	completionCmd := newCompletionCmd()
 	completionCmd.GroupID = "setup"
 	versionCmd := newVersionCmd()
@@ -79,6 +81,7 @@ func NewRootCmd(opts Options) *cobra.Command {
 		cleanCmd,
 		firstCmd,
 		installCmd,
+		hooksCmd,
 		completionCmd,
 		versionCmd,
 		newEndCmd(opts),
