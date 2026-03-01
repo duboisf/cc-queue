@@ -75,7 +75,24 @@ func newHooksInstallCmd(opts Options) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "install",
 		Short: "Install cc-queue hooks into Claude Code settings",
-		Args:  cobra.NoArgs,
+		Long: `Install all four cc-queue hooks into Claude Code settings.
+
+This is idempotent — running it multiple times is safe and will not
+duplicate hooks. Existing hooks from other tools are preserved.
+
+The following hooks are installed:
+
+  Notification       Triggers "cc-queue push" on permission prompts,
+                     idle prompts, and elicitation dialogs so they
+                     appear in the queue.
+  UserPromptSubmit   Triggers "cc-queue pop" when you respond to a
+                     prompt, clearing the entry from the queue.
+  SessionStart       Triggers "cc-queue push" to register new sessions.
+  SessionEnd         Triggers "cc-queue end" to clean up finished sessions.
+
+By default hooks are written to ~/.claude/settings.json (user-level).
+Use --project to write to .claude/settings.json in the current directory.`,
+		Args: cobra.NoArgs,
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		},
@@ -121,7 +138,18 @@ func newHooksUninstallCmd(opts Options) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "uninstall",
 		Short: "Remove cc-queue hooks from Claude Code settings",
-		Args:  cobra.NoArgs,
+		Long: `Remove all cc-queue hooks from Claude Code settings.
+
+This removes the Notification, UserPromptSubmit, SessionStart, and
+SessionEnd hooks that were installed by "cc-queue hooks install".
+
+Only cc-queue entries are removed — hooks from other tools sharing the
+same event keys are left intact. If a matcher contains both a cc-queue
+hook and another tool's hook, only the cc-queue hook is removed.
+
+By default hooks are removed from ~/.claude/settings.json (user-level).
+Use --project to target .claude/settings.json in the current directory.`,
+		Args: cobra.NoArgs,
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		},
