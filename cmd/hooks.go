@@ -60,6 +60,7 @@ func newHooksCmd(opts Options) *cobra.Command {
 
 	cmd.Flags().BoolVar(&user, "user", false, "Check ~/.claude/settings.json (default)")
 	cmd.Flags().BoolVar(&project, "project", false, "Check .claude/settings.json in cwd")
+	cmd.MarkFlagsMutuallyExclusive("user", "project")
 	_ = cmd.RegisterFlagCompletionFunc("user", cobra.NoFileCompletions)
 	_ = cmd.RegisterFlagCompletionFunc("project", cobra.NoFileCompletions)
 
@@ -103,14 +104,13 @@ Use --project to write to .claude/settings.json in the current directory.`,
 			}
 
 			// Check current status before installing.
-			before, _, err := queue.CheckHooks(target)
+			before, path, err := queue.CheckHooks(target)
 			if err != nil {
 				return err
 			}
 
 			if before.AllInstalled() {
-				settingsPath, _ := queue.SettingsPath(target)
-				fmt.Fprintf(opts.Stdout, "All hooks already installed in %s\n", settingsPath)
+				fmt.Fprintf(opts.Stdout, "All hooks already installed in %s\n", path)
 				return nil
 			}
 
@@ -118,14 +118,14 @@ Use --project to write to .claude/settings.json in the current directory.`,
 				return err
 			}
 
-			settingsPath, _ := queue.SettingsPath(target)
-			fmt.Fprintf(opts.Stdout, "Hooks installed in %s\n", settingsPath)
+			fmt.Fprintf(opts.Stdout, "Hooks installed in %s\n", path)
 			return nil
 		},
 	}
 
 	cmd.Flags().BoolVar(&user, "user", false, "Install to ~/.claude/settings.json (default)")
 	cmd.Flags().BoolVar(&project, "project", false, "Install to .claude/settings.json in cwd")
+	cmd.MarkFlagsMutuallyExclusive("user", "project")
 	_ = cmd.RegisterFlagCompletionFunc("user", cobra.NoFileCompletions)
 	_ = cmd.RegisterFlagCompletionFunc("project", cobra.NoFileCompletions)
 
@@ -160,14 +160,13 @@ Use --project to target .claude/settings.json in the current directory.`,
 			}
 
 			// Check current status before uninstalling.
-			before, _, err := queue.CheckHooks(target)
+			before, path, err := queue.CheckHooks(target)
 			if err != nil {
 				return err
 			}
 
 			if !before.AnyInstalled() {
-				settingsPath, _ := queue.SettingsPath(target)
-				fmt.Fprintf(opts.Stdout, "No cc-queue hooks found in %s\n", settingsPath)
+				fmt.Fprintf(opts.Stdout, "No cc-queue hooks found in %s\n", path)
 				return nil
 			}
 
@@ -175,14 +174,14 @@ Use --project to target .claude/settings.json in the current directory.`,
 				return err
 			}
 
-			settingsPath, _ := queue.SettingsPath(target)
-			fmt.Fprintf(opts.Stdout, "Hooks removed from %s\n", settingsPath)
+			fmt.Fprintf(opts.Stdout, "Hooks removed from %s\n", path)
 			return nil
 		},
 	}
 
 	cmd.Flags().BoolVar(&user, "user", false, "Remove from ~/.claude/settings.json (default)")
 	cmd.Flags().BoolVar(&project, "project", false, "Remove from .claude/settings.json in cwd")
+	cmd.MarkFlagsMutuallyExclusive("user", "project")
 	_ = cmd.RegisterFlagCompletionFunc("user", cobra.NoFileCompletions)
 	_ = cmd.RegisterFlagCompletionFunc("project", cobra.NoFileCompletions)
 

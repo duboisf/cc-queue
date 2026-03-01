@@ -186,7 +186,7 @@ func addNotificationHook(hooks map[string]any) {
 	eventKey := "Notification"
 	matchers := getOrCreateArray(hooks, eventKey)
 
-	if HasHookCommand(matchers, pushCommand) {
+	if hasHookCommand(matchers, pushCommand) {
 		return // already installed
 	}
 
@@ -207,7 +207,7 @@ func addUserPromptSubmitHook(hooks map[string]any) {
 	eventKey := "UserPromptSubmit"
 	matchers := getOrCreateArray(hooks, eventKey)
 
-	if HasHookCommand(matchers, popCommand) {
+	if hasHookCommand(matchers, popCommand) {
 		return // already installed
 	}
 
@@ -248,7 +248,7 @@ func addSessionStartHook(hooks map[string]any) {
 	eventKey := "SessionStart"
 	matchers := getOrCreateArray(hooks, eventKey)
 
-	if HasHookCommand(matchers, pushCommand) {
+	if hasHookCommand(matchers, pushCommand) {
 		return
 	}
 
@@ -269,7 +269,7 @@ func addSessionEndHook(hooks map[string]any) {
 	eventKey := "SessionEnd"
 	matchers := getOrCreateArray(hooks, eventKey)
 
-	if HasHookCommand(matchers, endCommand) {
+	if hasHookCommand(matchers, endCommand) {
 		return
 	}
 
@@ -464,17 +464,17 @@ func CheckHooks(target SettingsTarget) (*HookStatus, string, error) {
 	}
 
 	return &HookStatus{
-		Notification:     HasHookCommand(getOrCreateArray(hooks, "Notification"), pushCommand),
-		UserPromptSubmit: HasHookCommand(getOrCreateArray(hooks, "UserPromptSubmit"), popCommand),
-		SessionStart:     HasHookCommand(getOrCreateArray(hooks, "SessionStart"), pushCommand),
-		SessionEnd:       HasHookCommand(getOrCreateArray(hooks, "SessionEnd"), endCommand),
+		Notification:     hasHookCommand(getOrCreateArray(hooks, "Notification"), pushCommand),
+		UserPromptSubmit: hasHookCommand(getOrCreateArray(hooks, "UserPromptSubmit"), popCommand),
+		SessionStart:     hasHookCommand(getOrCreateArray(hooks, "SessionStart"), pushCommand),
+		SessionEnd:       hasHookCommand(getOrCreateArray(hooks, "SessionEnd"), endCommand),
 	}, path, nil
 }
 
-// HasHookCommand checks if any matcher entry already contains the given command.
-// It uses a substring match so that prefixed variants like
+// hasHookCommand checks if any matcher entry already contains the given
+// command. It uses a substring match so that prefixed variants like
 // "CC_QUEUE_DEBUG=1 cc-queue push" are recognized as already installed.
-func HasHookCommand(matchers []any, command string) bool {
+func hasHookCommand(matchers []any, command string) bool {
 	for _, m := range matchers {
 		matcher, ok := m.(map[string]any)
 		if !ok {

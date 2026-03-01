@@ -36,7 +36,7 @@ func TestInstallHooks_FreshFile(t *testing.T) {
 	if !ok || len(notif) == 0 {
 		t.Fatal("Notification hooks missing")
 	}
-	if !HasHookCommand(notif, pushCommand) {
+	if !hasHookCommand(notif, pushCommand) {
 		t.Error("push hook not found in Notification")
 	}
 
@@ -45,7 +45,7 @@ func TestInstallHooks_FreshFile(t *testing.T) {
 	if !ok || len(ups) == 0 {
 		t.Fatal("UserPromptSubmit hooks missing")
 	}
-	if !HasHookCommand(ups, popCommand) {
+	if !hasHookCommand(ups, popCommand) {
 		t.Error("pop hook not found in UserPromptSubmit")
 	}
 }
@@ -113,10 +113,10 @@ func TestInstallHooks_PreservesExisting(t *testing.T) {
 	// Existing hook should still be present.
 	hooks := settings["hooks"].(map[string]any)
 	ups := hooks["UserPromptSubmit"].([]any)
-	if !HasHookCommand(ups, "existing-hook.sh") {
+	if !hasHookCommand(ups, "existing-hook.sh") {
 		t.Error("existing hook was removed")
 	}
-	if !HasHookCommand(ups, popCommand) {
+	if !hasHookCommand(ups, popCommand) {
 		t.Error("pop hook was not added")
 	}
 }
@@ -210,7 +210,7 @@ func TestInstallHooks_SessionStartAndEndHooks(t *testing.T) {
 	if !ok || len(ss) == 0 {
 		t.Fatal("SessionStart hooks missing")
 	}
-	if !HasHookCommand(ss, pushCommand) {
+	if !hasHookCommand(ss, pushCommand) {
 		t.Error("push hook not found in SessionStart")
 	}
 
@@ -219,7 +219,7 @@ func TestInstallHooks_SessionStartAndEndHooks(t *testing.T) {
 	if !ok || len(se) == 0 {
 		t.Fatal("SessionEnd hooks missing")
 	}
-	if !HasHookCommand(se, endCommand) {
+	if !hasHookCommand(se, endCommand) {
 		t.Error("end hook not found in SessionEnd")
 	}
 }
