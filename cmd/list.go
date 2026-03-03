@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const defaultHeader = "cc-queue — enter=jump  ctrl-i=shell  (auto-refreshes)"
+const defaultHeader = "cc-queue — enter=jump  ctrl-i=shell  ctrl-r=refresh"
 
 // entryRow holds precomputed display values for a queue entry.
 type entryRow struct {
@@ -271,8 +271,8 @@ func jumpRunE(opts Options) func(*cobra.Command, []string) error {
 			"--prompt=Jump to session> ",
 			"--preview="+previewCmd,
 			"--preview-window=down,wrap,40%",
-			"--bind=load:change-header("+defaultHeader+")+reload(sleep 2; "+reloadCmd+")",
-			"--bind=enter:transform("+jumpCmd+" >/dev/null 2>&1 && echo abort || echo \"change-header(⚠ Kitty window closed — entry removed)\")",
+			"--bind=ctrl-r:change-header("+defaultHeader+")+reload("+reloadCmd+")",
+			"--bind=enter:transform("+jumpCmd+" >/dev/null 2>&1 && echo abort || echo \"change-header(⚠ Kitty window closed — entry removed)+reload("+reloadCmd+")\")",
 			"--bind=ctrl-i:transform("+shellCmd+" >/dev/null 2>&1 && echo abort || echo \"change-header(⚠ Shell launch failed)\")",
 		)
 		fzf.Stdin = strings.NewReader(fzfLines())
