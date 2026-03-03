@@ -591,6 +591,68 @@ func TestTouchNonexistent(t *testing.T) {
 	}
 }
 
+func TestTouchByWindowID(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", tmp)
+
+	original := time.Date(2026, 2, 18, 10, 0, 0, 0, time.UTC)
+	Write(&Entry{SessionID: "current", KittyWindowID: "100", Event: "working", Timestamp: original, PID: os.Getpid()})
+	Write(&Entry{SessionID: "other", KittyWindowID: "200", Event: "permission_prompt", Timestamp: original, PID: os.Getpid()})
+
+	updated := time.Date(2026, 2, 18, 12, 0, 0, 0, time.UTC)
+	if err := TouchByWindowID("100", updated); err != nil {
+		t.Fatalf("TouchByWindowID: %v", err)
+	}
+
+	// "current" should have the updated timestamp.
+	sf, err := ReadSessionByID("current")
+	if err != nil {
+		t.Fatalf("ReadSessionByID(current): %v", err)
+	}
+	if !sf.Current.Timestamp.Equal(updated) {
+		t.Errorf("current timestamp = %v, want %v", sf.Current.Timestamp, updated)
+	}
+
+	// "other" should be untouched.
+	sf, err = ReadSessionByID("other")
+	if err != nil {
+		t.Fatalf("ReadSessionByID(other): %v", err)
+	}
+	if !sf.Current.Timestamp.Equal(original) {
+		t.Errorf("other timestamp = %v, want %v", sf.Current.Timestamp, original)
+	}
+}
+
+func TestTouchByWindowID_EmptyWID(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", tmp)
+
+	Write(&Entry{SessionID: "s1", KittyWindowID: "100", Event: "working", Timestamp: time.Now(), PID: os.Getpid()})
+
+	// Empty wid should be a no-op.
+	if err := TouchByWindowID("", time.Now()); err != nil {
+		t.Fatalf("TouchByWindowID: %v", err)
+	}
+}
+
+func TestTouchByWindowID_NoMatch(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", tmp)
+
+	original := time.Date(2026, 2, 18, 10, 0, 0, 0, time.UTC)
+	Write(&Entry{SessionID: "s1", KittyWindowID: "100", Event: "working", Timestamp: original, PID: os.Getpid()})
+
+	// Non-matching wid should be a no-op.
+	if err := TouchByWindowID("999", time.Now()); err != nil {
+		t.Fatalf("TouchByWindowID: %v", err)
+	}
+
+	sf, _ := ReadSessionByID("s1")
+	if !sf.Current.Timestamp.Equal(original) {
+		t.Errorf("timestamp changed unexpectedly: got %v, want %v", sf.Current.Timestamp, original)
+	}
+}
+
 func TestConcurrentWritesDontLoseHistory(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", tmp)

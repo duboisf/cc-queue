@@ -160,9 +160,15 @@ func newPreviewCmd() *cobra.Command {
 
 // jumpToEntry focuses the kitty window for the given entry.
 // Sessions persist — only stale entries (failed focus) are removed.
+// Before jumping, the current session (identified by $KITTY_WINDOW_ID)
+// is touched to push it to the end of the queue.
 func jumpToEntry(entry *queue.Entry) error {
 	if entry.KittyWindowID == "" {
 		return nil
+	}
+	// Deprioritize the current session before jumping away.
+	if currentWID := os.Getenv("KITTY_WINDOW_ID"); currentWID != "" {
+		queue.TouchByWindowID(currentWID, time.Now())
 	}
 	kittyArgs := []string{"@"}
 	if entry.KittyListenOn != "" {
@@ -199,23 +205,10 @@ func newJumpInternalCmd() *cobra.Command {
 					break
 				}
 			}
-			if target == nil || target.KittyWindowID == "" {
+			if target == nil {
 				return nil
 			}
-
-			kittyArgs := []string{"@"}
-			if target.KittyListenOn != "" {
-				kittyArgs = append(kittyArgs, "--to", target.KittyListenOn)
-			}
-			kittyArgs = append(kittyArgs, "focus-window", "--match", "id:"+target.KittyWindowID)
-			kittyCmd := exec.Command("kitty", kittyArgs...)
-			if out, err := kittyCmd.CombinedOutput(); err != nil {
-				// Window is stale — remove the entry.
-				queue.Remove(target.SessionID)
-				return fmt.Errorf("window no longer exists: %s", strings.TrimSpace(string(out)))
-			}
-			queue.Touch(target.SessionID, time.Now())
-			return nil
+			return jumpToEntry(target)
 		},
 	}
 }
