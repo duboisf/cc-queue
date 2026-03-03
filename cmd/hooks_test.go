@@ -132,7 +132,7 @@ func TestHooks_ShowsStatus(t *testing.T) {
 	got := stdout2.String()
 	// All four should show as installed.
 	for _, hook := range []string{"Notification", "UserPromptSubmit", "SessionStart", "SessionEnd"} {
-		expected := "[v] " + hook
+		expected := "\u2713 " + hook
 		if !strings.Contains(got, expected) {
 			t.Errorf("missing %q in output:\n%s", expected, got)
 		}
@@ -280,6 +280,134 @@ func TestHooksUninstall_PreservesOtherHooks(t *testing.T) {
 	}
 }
 
+func TestHooksView_ShowsStatus(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+
+	// Install hooks first.
+	opts1, _, _ := testOptions()
+	root1 := cmd.NewRootCmd(opts1)
+	_, _, err := executeCommand(root1, "hooks", "install")
+	if err != nil {
+		t.Fatalf("install: %v", err)
+	}
+
+	// Check status via "hooks view".
+	opts2, stdout2, _ := testOptions()
+	root2 := cmd.NewRootCmd(opts2)
+	_, _, err = executeCommand(root2, "hooks", "view")
+	if err != nil {
+		t.Fatalf("hooks view returned error: %v", err)
+	}
+
+	got := stdout2.String()
+	// All four should show as installed with their commands.
+	for _, hook := range []string{"Notification", "UserPromptSubmit", "SessionStart", "SessionEnd"} {
+		expected := "\u2713 " + hook
+		if !strings.Contains(got, expected) {
+			t.Errorf("missing %q in output:\n%s", expected, got)
+		}
+	}
+
+	// Should show the commands.
+	for _, command := range []string{"cc-queue push", "cc-queue pop", "cc-queue end"} {
+		if !strings.Contains(got, command) {
+			t.Errorf("missing command %q in output:\n%s", command, got)
+		}
+	}
+
+	// Should NOT show the "install missing" hint.
+	if strings.Contains(got, "install missing") {
+		t.Errorf("should not suggest installing when all hooks present:\n%s", got)
+	}
+}
+
+func TestHooksView_ProjectFlag(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	t.Cleanup(func() { os.Chdir(origDir) })
+
+	// Install hooks at project level.
+	opts1, _, _ := testOptions()
+	root1 := cmd.NewRootCmd(opts1)
+	_, _, err = executeCommand(root1, "hooks", "install", "--project")
+	if err != nil {
+		t.Fatalf("install --project: %v", err)
+	}
+
+	// Check status via "hooks view --project".
+	opts2, stdout2, _ := testOptions()
+	root2 := cmd.NewRootCmd(opts2)
+	_, _, err = executeCommand(root2, "hooks", "view", "--project")
+	if err != nil {
+		t.Fatalf("hooks view --project returned error: %v", err)
+	}
+
+	got := stdout2.String()
+	if !strings.Contains(got, ".claude/settings.json") {
+		t.Errorf("expected project settings path in output:\n%s", got)
+	}
+	for _, hook := range []string{"Notification", "UserPromptSubmit", "SessionStart", "SessionEnd"} {
+		expected := "\u2713 " + hook
+		if !strings.Contains(got, expected) {
+			t.Errorf("missing %q in output:\n%s", expected, got)
+		}
+	}
+}
+
+func TestHooksView_JSONOutput(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+
+	// Install hooks first.
+	opts1, _, _ := testOptions()
+	root1 := cmd.NewRootCmd(opts1)
+	_, _, err := executeCommand(root1, "hooks", "install")
+	if err != nil {
+		t.Fatalf("install: %v", err)
+	}
+
+	// Check status via "hooks view -o json".
+	opts2, stdout2, _ := testOptions()
+	root2 := cmd.NewRootCmd(opts2)
+	_, _, err = executeCommand(root2, "hooks", "view", "-o", "json")
+	if err != nil {
+		t.Fatalf("hooks view -o json returned error: %v", err)
+	}
+
+	var result struct {
+		Settings string `json:"settings"`
+		Hooks    []struct {
+			Name      string `json:"name"`
+			Command   string `json:"command"`
+			Installed bool   `json:"installed"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(stdout2.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON output: %v\n%s", err, stdout2.String())
+	}
+
+	if !strings.Contains(result.Settings, "settings.json") {
+		t.Errorf("settings path missing: %s", result.Settings)
+	}
+	if len(result.Hooks) != 4 {
+		t.Fatalf("expected 4 hooks, got %d", len(result.Hooks))
+	}
+	for _, h := range result.Hooks {
+		if !h.Installed {
+			t.Errorf("hook %s should be installed", h.Name)
+		}
+	}
+}
+
 func TestHooks_DetectsMissing(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
@@ -316,13 +444,13 @@ func TestHooks_DetectsMissing(t *testing.T) {
 	got := stdout.String()
 
 	// Notification should be installed.
-	if !strings.Contains(got, "[v] Notification") {
+	if !strings.Contains(got, "\u2713 Notification") {
 		t.Errorf("Notification should be installed:\n%s", got)
 	}
 
 	// Others should be missing.
 	for _, hook := range []string{"UserPromptSubmit", "SessionStart", "SessionEnd"} {
-		expected := "[x] " + hook
+		expected := "\u2717 " + hook
 		if !strings.Contains(got, expected) {
 			t.Errorf("missing %q in output:\n%s", expected, got)
 		}

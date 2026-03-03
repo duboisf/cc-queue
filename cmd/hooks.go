@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/duboisf/cc-queue/internal/queue"
@@ -8,12 +9,92 @@ import (
 )
 
 type hookEntry struct {
-	name      string
-	installed bool
+	name        string
+	command     string
+	description string
+	installed   bool
+}
+
+type hookJSON struct {
+	Name        string `json:"name"`
+	Command     string `json:"command"`
+	Description string `json:"description"`
+	Installed   bool   `json:"installed"`
+}
+
+type hooksViewJSON struct {
+	Settings string     `json:"settings"`
+	Hooks    []hookJSON `json:"hooks"`
+}
+
+func hooksViewRunE(opts Options, project *bool, output *string) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		target := queue.TargetUser
+		if *project {
+			target = queue.TargetProject
+		}
+
+		status, path, err := queue.CheckHooks(target)
+		if err != nil {
+			return err
+		}
+
+		hooks := []hookEntry{
+			{"Notification", "cc-queue push", "Queue prompts and dialogs", status.Notification},
+			{"UserPromptSubmit", "cc-queue pop", "Clear entry on user response", status.UserPromptSubmit},
+			{"SessionStart", "cc-queue push", "Register new session", status.SessionStart},
+			{"SessionEnd", "cc-queue end", "Clean up finished session", status.SessionEnd},
+		}
+
+		if *output == "json" {
+			jh := make([]hookJSON, len(hooks))
+			for i, h := range hooks {
+				jh[i] = hookJSON{h.name, h.command, h.description, h.installed}
+			}
+			data, err := json.MarshalIndent(hooksViewJSON{Settings: path, Hooks: jh}, "", "  ")
+			if err != nil {
+				return err
+			}
+			fmt.Fprintln(opts.Stdout, string(data))
+			return nil
+		}
+
+		fmt.Fprintln(opts.Stdout, "Claude Code hooks that let cc-queue track prompts across terminal tabs.")
+		fmt.Fprintf(opts.Stdout, "\nSettings: %s\n\n", path)
+
+		fmt.Fprintf(opts.Stdout, "    %-18s %-16s %s\n", "Hook", "Command", "Description")
+		fmt.Fprintf(opts.Stdout, "    %-18s %-16s %s\n", "----", "-------", "-----------")
+		for _, h := range hooks {
+			mark := "\u2717" // ✗
+			if h.installed {
+				mark = "\u2713" // ✓
+			}
+			fmt.Fprintf(opts.Stdout, "  %s %-18s %-16s %s\n", mark, h.name, h.command, h.description)
+		}
+
+		if !status.AllInstalled() {
+			fmt.Fprintf(opts.Stdout, "\nRun 'cc-queue hooks install' to install missing hooks.\n")
+		}
+
+		return nil
+	}
+}
+
+func addHooksViewFlags(cmd *cobra.Command, user, project *bool, output *string) {
+	cmd.Flags().BoolVar(user, "user", false, "Check ~/.claude/settings.json (default)")
+	cmd.Flags().BoolVar(project, "project", false, "Check .claude/settings.json in cwd")
+	cmd.MarkFlagsMutuallyExclusive("user", "project")
+	cmd.Flags().StringVarP(output, "output", "o", "text", `Output format: "text" or "json"`)
+	_ = cmd.RegisterFlagCompletionFunc("user", cobra.NoFileCompletions)
+	_ = cmd.RegisterFlagCompletionFunc("project", cobra.NoFileCompletions)
+	_ = cmd.RegisterFlagCompletionFunc("output", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"text", "json"}, cobra.ShellCompDirectiveNoFileComp
+	})
 }
 
 func newHooksCmd(opts Options) *cobra.Command {
 	var user, project bool
+	var output string
 
 	cmd := &cobra.Command{
 		Use:   "hooks",
@@ -22,50 +103,33 @@ func newHooksCmd(opts Options) *cobra.Command {
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			target := queue.TargetUser
-			if project {
-				target = queue.TargetProject
-			}
-
-			status, path, err := queue.CheckHooks(target)
-			if err != nil {
-				return err
-			}
-
-			fmt.Fprintf(opts.Stdout, "Settings: %s\n\n", path)
-
-			hooks := []hookEntry{
-				{"Notification", status.Notification},
-				{"UserPromptSubmit", status.UserPromptSubmit},
-				{"SessionStart", status.SessionStart},
-				{"SessionEnd", status.SessionEnd},
-			}
-
-			for _, h := range hooks {
-				mark := "x"
-				if h.installed {
-					mark = "v"
-				}
-				fmt.Fprintf(opts.Stdout, "  [%s] %s\n", mark, h.name)
-			}
-
-			if !status.AllInstalled() {
-				fmt.Fprintf(opts.Stdout, "\nRun 'cc-queue hooks install' to install missing hooks.\n")
-			}
-
-			return nil
-		},
+		RunE: hooksViewRunE(opts, &project, &output),
 	}
 
-	cmd.Flags().BoolVar(&user, "user", false, "Check ~/.claude/settings.json (default)")
-	cmd.Flags().BoolVar(&project, "project", false, "Check .claude/settings.json in cwd")
-	cmd.MarkFlagsMutuallyExclusive("user", "project")
-	_ = cmd.RegisterFlagCompletionFunc("user", cobra.NoFileCompletions)
-	_ = cmd.RegisterFlagCompletionFunc("project", cobra.NoFileCompletions)
+	addHooksViewFlags(cmd, &user, &project, &output)
 
+	cmd.AddCommand(newHooksViewCmd(opts))
 	cmd.AddCommand(newHooksInstallCmd(opts))
 	cmd.AddCommand(newHooksUninstallCmd(opts))
+
+	return cmd
+}
+
+func newHooksViewCmd(opts Options) *cobra.Command {
+	var user, project bool
+	var output string
+
+	cmd := &cobra.Command{
+		Use:   "view",
+		Short: "Show cc-queue hook status in Claude Code settings",
+		Args:  cobra.NoArgs,
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		},
+		RunE: hooksViewRunE(opts, &project, &output),
+	}
+
+	addHooksViewFlags(cmd, &user, &project, &output)
 
 	return cmd
 }
