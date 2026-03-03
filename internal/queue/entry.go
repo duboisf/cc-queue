@@ -163,6 +163,27 @@ func Touch(sessionID string, now time.Time) error {
 	return nil
 }
 
+// TouchByWindowID updates the timestamp of entries matching the given kitty
+// window ID. This deprioritizes the current session when jumping to another.
+// It is a no-op if wid is empty or no matching entry is found.
+func TouchByWindowID(wid string, now time.Time) error {
+	if wid == "" {
+		return nil
+	}
+	entries, err := List()
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.KittyWindowID == wid {
+			if err := Touch(e.SessionID, now); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // Read loads the current entry from a session file.
 // Handles both new SessionFile format and legacy bare-entry format.
 func Read(fpath string) (*Entry, error) {
