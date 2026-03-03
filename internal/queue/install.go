@@ -472,8 +472,8 @@ func CheckHooks(target SettingsTarget) (*HookStatus, string, error) {
 }
 
 // hasHookCommand checks if any matcher entry already contains the given
-// command. It uses a substring match so that prefixed variants like
-// "CC_QUEUE_DEBUG=1 cc-queue push" are recognized as already installed.
+// command. It uses a substring match so that prefixed variants are
+// recognized as already installed.
 func hasHookCommand(matchers []any, command string) bool {
 	for _, m := range matchers {
 		matcher, ok := m.(map[string]any)

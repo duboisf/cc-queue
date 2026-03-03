@@ -125,7 +125,7 @@ func TestInstallHooks_NoDuplicateWhenCommandPrefixed(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 
-	// Simulate user having modified the command with an env var prefix.
+	// Simulate user having modified the command with a wrapper prefix.
 	dir := filepath.Join(tmp, ".claude")
 	os.MkdirAll(dir, 0755)
 
@@ -137,7 +137,7 @@ func TestInstallHooks_NoDuplicateWhenCommandPrefixed(t *testing.T) {
 					"hooks": []any{
 						map[string]any{
 							"type":    "command",
-							"command": "CC_QUEUE_DEBUG=1 cc-queue push",
+							"command": "nice cc-queue push",
 						},
 					},
 				},
@@ -148,7 +148,7 @@ func TestInstallHooks_NoDuplicateWhenCommandPrefixed(t *testing.T) {
 					"hooks": []any{
 						map[string]any{
 							"type":    "command",
-							"command": "CC_QUEUE_DEBUG=1 cc-queue pop",
+							"command": "nice cc-queue pop",
 						},
 					},
 				},

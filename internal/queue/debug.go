@@ -7,13 +7,13 @@ import (
 	"time"
 )
 
-// DebugEnabled returns true when CC_QUEUE_DEBUG is set to a non-empty value.
+// DebugEnabled returns true when debug logging is enabled via the config file.
 func DebugEnabled() bool {
-	return os.Getenv("CC_QUEUE_DEBUG") != ""
+	return ReadConfig().Debug
 }
 
 // Debugf appends a timestamped line to the debug log file in the queue directory.
-// Silently does nothing if CC_QUEUE_DEBUG is not set or the log cannot be opened.
+// Silently does nothing if debug is not enabled or the log cannot be opened.
 func Debugf(format string, args ...any) {
 	if !DebugEnabled() {
 		return
