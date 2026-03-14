@@ -25,6 +25,9 @@ type Options struct {
 	FullTabber kitty.FullTabber
 	// CleanStaleWindowsFn removes entries with dead kitty windows. Nil to skip.
 	CleanStaleWindowsFn func()
+	// ClaudeDir is the path to the Claude Code config directory.
+	// Defaults to ~/.claude if empty.
+	ClaudeDir string
 }
 
 // NewRootCmd creates the root cobra command with all subcommands wired up.
@@ -92,7 +95,7 @@ func NewRootCmd(opts Options) *cobra.Command {
 		versionCmd,
 		newEndCmd(opts),
 		newListFzfCmd(opts),
-		newPreviewCmd(),
+		newPreviewCmd(opts),
 		newJumpInternalCmd(),
 		newShellCmd(),
 	)

@@ -3,10 +3,12 @@ package cmd_test
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/duboisf/cc-queue/cmd"
+	"github.com/duboisf/cc-queue/internal/conversation"
 	"github.com/duboisf/cc-queue/internal/queue"
 )
 
@@ -275,7 +277,7 @@ func TestPreview_WorkingEntry(t *testing.T) {
 	}
 }
 
-func TestPreview_ShowsHistory(t *testing.T) {
+func TestPreview_NoRecentActivity(t *testing.T) {
 	setupQueueDir(t)
 	opts, _, _ := testOptions()
 
@@ -288,18 +290,8 @@ func TestPreview_ShowsHistory(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(stdout, "IDLE") {
-		t.Errorf("output missing current IDLE label:\n%s", stdout)
-	}
-	if !strings.Contains(stdout, "Recent activity") {
-		t.Errorf("output missing history separator:\n%s", stdout)
-	}
-	// History should contain the previous events.
-	if !strings.Contains(stdout, "WORK") {
-		t.Errorf("output missing WORK in history:\n%s", stdout)
-	}
-	if !strings.Contains(stdout, "PERM") {
-		t.Errorf("output missing PERM in history:\n%s", stdout)
+	if strings.Contains(stdout, "Recent activity") {
+		t.Errorf("should not show Recent activity section:\n%s", stdout)
 	}
 }
 
@@ -535,5 +527,135 @@ func TestListFzf_NilCleanStaleWindowsFn(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "sess-nil\t") {
 		t.Errorf("output missing entry:\n%s", stdout)
+	}
+}
+
+func TestPreview_ShowsConversation(t *testing.T) {
+	setupQueueDir(t)
+	opts, _, _ := testOptions()
+
+	claudeDir := t.TempDir()
+	opts.ClaudeDir = claudeDir
+
+	cwd := "/home/user/proj"
+	sessionID := "sess-conv"
+	seedEntryWithMessage(t, sessionID, cwd, "permission_prompt", 1001, "Allow read?")
+
+	// Create JSONL at the path the preview command will look for.
+	jsonlDir := filepath.Dir(conversation.JSONLPath(claudeDir, cwd, sessionID))
+	os.MkdirAll(jsonlDir, 0755)
+	jsonl := `{"type":"user","timestamp":"2026-03-13T10:00:00Z","message":{"content":[{"type":"text","text":"fix the login bug"}]}}
+{"type":"assistant","timestamp":"2026-03-13T10:00:01Z","message":{"content":[{"type":"text","text":"I'll look into the login flow."}]}}
+`
+	os.WriteFile(conversation.JSONLPath(claudeDir, cwd, sessionID), []byte(jsonl), 0644)
+
+	root := cmd.NewRootCmd(opts)
+	stdout, _, err := executeCommand(root, "_preview", sessionID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(stdout, "Conversation") {
+		t.Errorf("output missing Conversation header:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "fix the login bug") {
+		t.Errorf("output missing user message:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "I'll look into the login flow.") {
+		t.Errorf("output missing assistant message:\n%s", stdout)
+	}
+	// Age + icon on their own line, text indented on next line.
+	if !strings.Contains(stdout, "👤\n    fix the login bug") {
+		t.Errorf("user message should have icon on separate line with indented text:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "🤖\n    I'll look into the login flow.") {
+		t.Errorf("assistant message should have icon on separate line with indented text:\n%s", stdout)
+	}
+}
+
+func TestPreview_NoConversationWhenNoJSONL(t *testing.T) {
+	setupQueueDir(t)
+	opts, _, _ := testOptions()
+	opts.ClaudeDir = t.TempDir() // empty dir, no JSONL files
+
+	seedEntry(t, "sess-noconv", "/home/user/proj", "permission_prompt", 1001)
+
+	root := cmd.NewRootCmd(opts)
+	stdout, _, err := executeCommand(root, "_preview", "sess-noconv")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if strings.Contains(stdout, "Conversation") {
+		t.Errorf("should not show Conversation section without JSONL file:\n%s", stdout)
+	}
+}
+
+func TestPreview_ConversationTruncatesLongMessages(t *testing.T) {
+	setupQueueDir(t)
+	opts, _, _ := testOptions()
+
+	claudeDir := t.TempDir()
+	opts.ClaudeDir = claudeDir
+
+	cwd := "/home/user/proj"
+	sessionID := "sess-trunc"
+	seedEntry(t, sessionID, cwd, "permission_prompt", 1001)
+
+	longMsg := strings.Repeat("x", 600)
+	jsonl := `{"type":"user","timestamp":"2026-03-13T10:00:00Z","message":{"content":[{"type":"text","text":"` + longMsg + `"}]}}
+`
+	jsonlDir := filepath.Dir(conversation.JSONLPath(claudeDir, cwd, sessionID))
+	os.MkdirAll(jsonlDir, 0755)
+	os.WriteFile(conversation.JSONLPath(claudeDir, cwd, sessionID), []byte(jsonl), 0644)
+
+	root := cmd.NewRootCmd(opts)
+	stdout, _, err := executeCommand(root, "_preview", sessionID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(stdout, "...") {
+		t.Errorf("long message should be truncated with '...':\n%s", stdout)
+	}
+	// The output should not contain the full 600-char message.
+	if strings.Contains(stdout, longMsg) {
+		t.Errorf("long message should be truncated, but found full message:\n%s", stdout)
+	}
+}
+
+func TestPreview_ConversationMultiline(t *testing.T) {
+	setupQueueDir(t)
+	opts, _, _ := testOptions()
+
+	claudeDir := t.TempDir()
+	opts.ClaudeDir = claudeDir
+
+	cwd := "/home/user/proj"
+	sessionID := "sess-multi"
+	seedEntry(t, sessionID, cwd, "permission_prompt", 1001)
+
+	jsonl := `{"type":"assistant","timestamp":"2026-03-13T10:00:00Z","message":{"content":[{"type":"text","text":"Line one\nLine two\nLine three"}]}}
+`
+	jsonlDir := filepath.Dir(conversation.JSONLPath(claudeDir, cwd, sessionID))
+	os.MkdirAll(jsonlDir, 0755)
+	os.WriteFile(conversation.JSONLPath(claudeDir, cwd, sessionID), []byte(jsonl), 0644)
+
+	root := cmd.NewRootCmd(opts)
+	stdout, _, err := executeCommand(root, "_preview", sessionID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Each text line should be indented.
+	if !strings.Contains(stdout, "    Line one\n") {
+		t.Errorf("output missing indented 'Line one':\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "    Line two\n") {
+		t.Errorf("output missing indented 'Line two':\n%s", stdout)
+	}
+	// Age+icon should be on its own line before the text.
+	if !strings.Contains(stdout, "🤖\n    Line one") {
+		t.Errorf("icon should be on separate line from text:\n%s", stdout)
 	}
 }

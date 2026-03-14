@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/duboisf/cc-queue/internal/conversation"
 	"github.com/duboisf/cc-queue/internal/queue"
 	"github.com/spf13/cobra"
 )
@@ -110,7 +112,16 @@ func newListFzfCmd(opts Options) *cobra.Command {
 	}
 }
 
-func newPreviewCmd() *cobra.Command {
+// maxConversationLines is the number of recent conversation messages shown in preview.
+const maxConversationLines = 10
+
+// maxMsgLen is the maximum length of a conversation message before truncation.
+const maxMsgLen = 500
+
+// msgIndent is the prefix for each line of a conversation message body.
+const msgIndent = "    "
+
+func newPreviewCmd(opts Options) *cobra.Command {
 	return &cobra.Command{
 		Use:    "_preview [session_id]",
 		Hidden: true,
@@ -140,18 +151,28 @@ func newPreviewCmd() *cobra.Command {
 				fmt.Fprintln(w, e.Message)
 			}
 
-			if len(sf.History) > 0 {
+			// Show recent conversation from Claude Code JSONL.
+			claudeDir := opts.ClaudeDir
+			if claudeDir == "" {
+				home, _ := os.UserHomeDir()
+				claudeDir = filepath.Join(home, ".claude")
+			}
+			jsonlPath := conversation.JSONLPath(claudeDir, e.CWD, e.SessionID)
+			lines, _ := conversation.ReadLines(jsonlPath, maxConversationLines)
+			if len(lines) > 0 {
 				fmt.Fprintln(w)
-				fmt.Fprintln(w, "\u2500\u2500 Recent activity \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
-				for _, h := range sf.History {
-					msg := h.Message
-					if len(msg) > 60 {
-						msg = msg[:57] + "..."
+				fmt.Fprintln(w, "\u2500\u2500 Conversation \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
+				// Show earliest message first (chronological order).
+				for i := len(lines) - 1; i >= 0; i-- {
+					l := lines[i]
+					text := l.Text
+					if len(text) > maxMsgLen {
+						text = text[:maxMsgLen-3] + "..."
 					}
-					fmt.Fprintf(w, "%5s  %-5s  %s\n",
-						queue.FormatAge(h.Timestamp),
-						queue.EventLabel(h.Event),
-						msg)
+					fmt.Fprintf(w, "%5s %s\n", queue.FormatAge(l.Timestamp), l.Icon)
+					for _, line := range strings.Split(text, "\n") {
+						fmt.Fprintf(w, "%s%s\n", msgIndent, line)
+					}
 				}
 			}
 		},
@@ -253,7 +274,7 @@ func jumpRunE(opts Options) func(*cobra.Command, []string) error {
 		shellCmd := self + " _shell {1}"
 
 		fzf := exec.Command("fzf",
-			"--height=50%",
+			"--height=100%",
 			"--layout=reverse",
 			"--with-nth=2..",
 			"--delimiter=\t",
@@ -263,10 +284,10 @@ func jumpRunE(opts Options) func(*cobra.Command, []string) error {
 			"--header-lines=1",
 			"--prompt=Jump to session> ",
 			"--preview="+previewCmd,
-			"--preview-window=down,wrap,40%",
+			"--preview-window=down,wrap,70%",
 			"--bind=ctrl-r:change-header("+defaultHeader+")+reload("+reloadCmd+")",
-			"--bind=enter:transform("+jumpCmd+" >/dev/null 2>&1 && echo abort || echo \"change-header(⚠ Kitty window closed — entry removed)+reload("+reloadCmd+")\")",
-			"--bind=ctrl-i:transform("+shellCmd+" >/dev/null 2>&1 && echo abort || echo \"change-header(⚠ Shell launch failed)\")",
+			`--bind=enter:transform(`+jumpCmd+` >/dev/null 2>&1 && echo abort || { echo 'change-header:`+"⚠ Kitty window closed — entry removed"+`'; echo 'reload:`+reloadCmd+`'; })`,
+			`--bind=ctrl-i:transform(`+shellCmd+` >/dev/null 2>&1 && echo abort || echo 'change-header:`+"⚠ Shell launch failed"+`')`,
 		)
 		fzf.Stdin = strings.NewReader(fzfLines())
 		fzf.Stderr = opts.Stderr
