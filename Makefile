@@ -20,3 +20,7 @@ test:
 cover:
 	go test -race -coverprofile=coverage.out ./...
 	go tool cover -func=coverage.out
+
+.PHONY: lint-docs
+lint-docs:
+	go run ./scripts/lintdocs.go
